@@ -284,9 +284,10 @@ class IndianPokerGame:
             try:
                 strategy = self.strategies[player_id]
                 action = strategy.make_decision(round_state.get_state_hiding_card_for_player_id(player_id))
+                action.player_id = player_id
             except Exception as e:
                 logger.exception(f"Error getting decision for {player_id}, folding.")
-                action = Action('fold')
+                action = Action('fold', player_id=player_id)
 
             # Process action
             invalid_action = False

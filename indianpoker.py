@@ -46,7 +46,7 @@ class PlayerInformation:
     """
     player_id: str
     order: int
-    card: int
+    card: float
     stack_size: int
     has_folded: bool = False
 
@@ -252,7 +252,7 @@ class IndianPokerGame:
         """
         Play starts with the first player and goes in order
 
-        The round ends whenn
+        The round ends when
         - all players have folded except one
         - all players have called the current raiser
         - all players have checked

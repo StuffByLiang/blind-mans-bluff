@@ -51,8 +51,11 @@ def hello_world():
 
 @app.route("/results")
 def results():
-    with open('results/results.txt', 'r') as f:
-        return f.read()
+    try:
+        with open('results/results.txt', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "No results yet"
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():

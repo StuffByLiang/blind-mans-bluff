@@ -105,7 +105,7 @@ class RoundState:
         """
         one_player_remaining_with_money = sum(1 for player_info in self.player_information.values() if not (player_info.has_folded or player_info.stack_size == 0)) == 1
         all_checked_or_folded = len(self.betting_history) == len(self.player_information) and all(action.action_type in ['check', 'fold'] for action in self.betting_history)
-        all_called_or_folded = len(self.betting_history) >= len(self.player_information) and all(action.action_type in ['call', 'fold'] for action in self.betting_history[-len(self.player_information) - 1:])
+        all_called_or_folded = len(self.betting_history) >= len(self.player_information) and all(action.action_type in ['call', 'fold'] for action in self.betting_history[-(len(self.player_information) - 1):])
 
         logger.debug(f"one_player_remaining_with_money: {one_player_remaining_with_money}, all_checked_or_folded: {all_checked_or_folded}, all_called_or_folded: {all_called_or_folded}")
 

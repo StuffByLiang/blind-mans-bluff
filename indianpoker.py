@@ -104,12 +104,12 @@ class RoundState:
         This will be false if the round is still ongoing and passed as a parameter to the make_decision method of the Strategy class.
         """
         one_player_remaining_with_money = sum(1 for player_info in self.player_information.values() if not (player_info.has_folded or player_info.stack_size == 0)) == 1
-        all_checked = len(self.betting_history) == len(self.player_information) and all(action.action_type == 'check' for action in self.betting_history)
-        all_called = len(self.betting_history) >= len(self.player_information) and all(action.action_type == 'call' for action in self.betting_history[-len(self.player_information) - 1:])
+        all_checked_or_folded = len(self.betting_history) == len(self.player_information) and all(action.action_type in ['check', 'fold'] for action in self.betting_history)
+        all_called_or_folded = len(self.betting_history) >= len(self.player_information) and all(action.action_type in ['call', 'fold'] for action in self.betting_history[-len(self.player_information) - 1:])
 
-        logger.debug(f"one_player_remaining_with_money: {one_player_remaining_with_money}, all_checked: {all_checked}, all_called: {all_called}")
+        logger.debug(f"one_player_remaining_with_money: {one_player_remaining_with_money}, all_checked_or_folded: {all_checked_or_folded}, all_called_or_folded: {all_called_or_folded}")
 
-        return one_player_remaining_with_money or all_checked or all_called
+        return one_player_remaining_with_money or all_checked_or_folded or all_called_or_folded
 
     def can_check_currently(self, player_id) -> bool:
         """

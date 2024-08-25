@@ -48,6 +48,7 @@ class PlayerInformation:
     order: int
     card: float
     stack_size: int
+    current_bet: int = 0
     has_folded: bool = False
 
 class RoundState:
@@ -64,7 +65,7 @@ class RoundState:
     pot: int = 0
     current_bet: int = 0
     last_raise_amount: int = 0
-    betting_history: list[Action] = [] 
+    betting_history: list[Action] = []
     player_information: OrderedDict[str, PlayerInformation] = []
 
     def __init__(self, pot: int, player_information: OrderedDict[str, PlayerInformation]):
@@ -103,13 +104,18 @@ class RoundState:
 
         This will be false if the round is still ongoing and passed as a parameter to the make_decision method of the Strategy class.
         """
-        one_player_remaining_with_money = sum(1 for player_info in self.player_information.values() if not (player_info.has_folded or player_info.stack_size == 0)) == 1
-        all_checked_or_folded = len(self.betting_history) == len(self.player_information) and all(action.action_type in ['check', 'fold'] for action in self.betting_history)
-        all_called_or_folded = len(self.betting_history) >= len(self.player_information) and all(action.action_type in ['call', 'fold'] for action in self.betting_history[-(len(self.player_information) - 1):])
 
-        logger.debug(f"one_player_remaining_with_money: {one_player_remaining_with_money}, all_checked_or_folded: {all_checked_or_folded}, all_called_or_folded: {all_called_or_folded}")
-
-        return one_player_remaining_with_money or all_checked_or_folded or all_called_or_folded
+        def ok(player):
+            return any([
+                player.has_folded,
+                player.stack_size == 0,
+                player.current_bet == self.current_bet,
+            ])
+        print([p.current_bet for p in self.player_information.values()], self.current_bet)
+        return (
+            len(self.betting_history) >= len(self.player_information)
+            and all(ok(player) for player in self.player_information.values())
+          )
 
     def can_check_currently(self, player_id) -> bool:
         """
@@ -147,10 +153,23 @@ class RoundState:
         This needs to be in addition to the amount the player needs to call.
         """
         call_amount = self.get_amount_to_call_for_player(player_id)
-        return max(min(self.last_raise_amount + call_amount, self.player_information[player_id].stack_size), 1)
+        raise_amount = max(min(self.last_raise_amount + call_amount, self.player_information[player_id].stack_size), 1)
+        # logger.debug(f"{player_id=} {call_amount=} {raise_amount=}")
+        return raise_amount
 
     def __repr__(self):
         return f"RoundState(pot={self.pot}, current_bet={self.current_bet}, betting_history={self.betting_history}, player_information={self.player_information})"
+
+    # helpers
+    def check_fold(self, player_id):
+        return Action("check") if self.can_check_currently(player_id) else Action("fold")
+
+    def check_call(self, player_id):
+      if self.can_check_currently(player_id):
+        return Action("check")
+      else:
+        return Action("call", amount=self.get_amount_to_call_for_player(player_id))
+
 
 
 class Strategy:
@@ -217,7 +236,7 @@ class IndianPokerGame:
         pot = 0
         deck = self.make_shuffled_deck()
         player_information = OrderedDict()
-        
+
         # Determine the starting index based on first_player_idx
         num_players = len(self.player_id_order)
         player_cycle = cycle(self.player_id_order)
@@ -225,13 +244,13 @@ class IndianPokerGame:
         # Skip players until reaching the starting player
         for _ in range(self.first_player_idx):
             next(player_cycle)
-        
+
         # first player pays the entire ante or whatever is left in their stack
         player_id = next(player_cycle)
         ante_amount = min(self.stack_sizes[player_id], self.ante)
         self.stack_sizes[player_id] -= ante_amount
         pot += ante_amount
-        
+
         # the player after the ante payer gets the first card
         for idx in range(num_players):
             player_id = next(player_cycle)
@@ -242,10 +261,10 @@ class IndianPokerGame:
                     card=deck.pop(),
                     stack_size=self.stack_sizes[player_id]
                 )
-        
+
         # update first player index for the next round
         self.first_player_idx = (self.first_player_idx + 1) % num_players
-    
+
         return RoundState(pot=pot, player_information=player_information)
 
     def play_round(self):
@@ -267,7 +286,7 @@ class IndianPokerGame:
 
         # Perform betting rounds
         while not round_state.is_round_finished():
-            logger.debug(round_state)
+            # logger.debug(round_state)
 
             player_id = next(player_id_cycle)
             logger.debug(f"--- Action on {player_id} ---")
@@ -278,7 +297,7 @@ class IndianPokerGame:
             if round_state.is_player_all_in(player_id):
                 logger.debug(f"skipping {player_id} is all-in")
                 continue
-            
+
             # Get decision from the player's strategy
             action = None
             try:
@@ -294,11 +313,12 @@ class IndianPokerGame:
             if action.action_type == 'fold':
                 logger.debug(f"{player_id} folds.")
                 player_info.has_folded = True
-            
+
             elif action.action_type == 'all in':
                 all_in_amount = self.stack_sizes[player_id]
                 self.stack_sizes[player_id] = 0
                 round_state.pot += all_in_amount
+                player_info.current_bet += all_in_amount
                 logger.debug(f"{player_id} goes all in with {all_in_amount}.")
 
             elif action.action_type == 'call':
@@ -312,6 +332,7 @@ class IndianPokerGame:
                     call_amount = action.amount
                     self.stack_sizes[player_id] -= call_amount
                     round_state.pot += call_amount
+                    player_info.current_bet += call_amount
                     logger.debug(f"{player_id} calls {call_amount}.")
 
             elif action.action_type == 'raise':
@@ -320,11 +341,14 @@ class IndianPokerGame:
                     invalid_action = True
                 else:
                     raise_amount = action.amount
+                    call_amount = round_state.get_amount_to_call_for_player(player_id)
                     self.stack_sizes[player_id] -= raise_amount
                     round_state.pot += raise_amount
-                    round_state.current_bet += raise_amount
-                    round_state.last_raise_amount = raise_amount - round_state.get_amount_to_call_for_player(player_id)
-                    logger.debug(f"{player_id} raises {raise_amount} to a total bet of {round_state.current_bet}.")
+                    round_state.current_bet += raise_amount - call_amount
+                    round_state.last_raise_amount = raise_amount - call_amount
+                    player_info.current_bet += raise_amount
+                    # logger.debug(str((call_amount, raise_amount, player_info.current_bet, round_state.current_bet)))
+                    logger.debug(f"{player_id} raises {raise_amount - call_amount} to a total bet of {round_state.current_bet}.")
 
             elif action.action_type == 'check':
                 if not round_state.can_check_currently(player_id):
@@ -368,7 +392,7 @@ class IndianPokerGame:
         for pid in self.stack_sizes:
             if self.stack_sizes[pid] == 0:
                 self.busted_players.add(pid)
-            
+
     def has_at_least_2_players_left(self):
         return len(self.stack_sizes) - len(self.busted_players) >= 2
 
@@ -392,7 +416,7 @@ if __name__ == "__main__":
         def make_decision(self, game_state: RoundState) -> Action:
             # Simple strategy: do a random action
             valid_actions = ['fold', 'call', 'raise', 'check']
-            
+
             action = random.choice(valid_actions)
 
             if action == 'fold':
@@ -403,7 +427,6 @@ if __name__ == "__main__":
                 return Action('raise', amount=game_state.get_minimum_raise_amount_for_player(self.player_id))
             elif action == 'check':
                 return Action('check')
-
 
     strategies = {
         'Player 1': RandomStrategy('Player 1'),

@@ -5,7 +5,10 @@ import os
 import logging
 import datetime
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('agg')
 import itertools
+
 
 class Evaluator:
     def __init__(self, logger = logging.getLogger(__name__)):

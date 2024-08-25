@@ -87,7 +87,7 @@ class Evaluator:
 
             avg_win_rate = {}
             for strategy in self.strategies:
-                avg_win_rate[strategy] = (self.number_of_chips[strategy]) / self.number_of_games[strategy]
+                avg_win_rate[strategy] = (self.number_of_chips[strategy]) * rounds / self.number_of_games[strategy]
 
             # num games is same for each strategy so can just take the first one
             number_of_games = list(self.number_of_games.values())[0]

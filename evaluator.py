@@ -43,10 +43,10 @@ class Evaluator:
         self.logger.info(f"Reloaded Strategies: strategies playing: {self.strategies}")
 
         self.number_of_chips = {
-            strategy: 0 for strategy in self.strategies
+            strategy: 0 for strategy in self.strategy_classes
         }
         self.number_of_games = {
-            strategy: 0 for strategy in self.strategies
+            strategy: 0 for strategy in self.strategy_classes
         }
 
         # remove all files from results folder and make it if needed

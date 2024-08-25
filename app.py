@@ -15,37 +15,21 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# create a logger that is of INFO that only logs to a file
+logger = logging.getLogger("Evaluator")
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+handler = logging.FileHandler('logs/evaluator.log', mode='w+')
+handler.setFormatter(logging.Formatter('%(message)s'))
+handler.setLevel(logging.INFO)
+logger.addHandler(handler)
+logger.propagate = False
 
-class EvaluatorWrapper():
-    def __init__(self):
-        super().__init__()
-        self.thread = None
-        self.evaluator = None
-    
-    def run(self):
-        # create a logger that is of INFO that only logs to a file
-        logger = logging.getLogger("Evaluator")
-        if not os.path.exists('logs'):
-            os.makedirs('logs')
-        handler = logging.FileHandler('logs/evaluator.log', mode='w+')
-        handler.setFormatter(logging.Formatter('%(message)s'))
-        handler.setLevel(logging.INFO)
-        logger.addHandler(handler)
-        logger.propagate = False
-        self.evaluator = Evaluator(logger)
-        self.evaluator.load_strategies()
-
-        thread = Thread(target=self.evaluator.evaluate_strategies)
-        thread.start()
-
-    def restart(self):
-        if self.thread:
-            evaluator_wrapper.stop = True
-            self.thread.join()
-        self.run()
-
-evaluator_wrapper = EvaluatorWrapper()
-evaluator_wrapper.restart()
+evaluator = Evaluator(logger)
+def run_evaluator():
+    evaluator.load_strategies()
+    evaluator.evaluate_strategies()
+Thread(target=run_evaluator).start()
 
 ########## Helpers ##########
 
@@ -56,7 +40,7 @@ def allowed_file(filename):
 
 @app.route("/")
 def hello_world():
-    strategies = evaluator_wrapper.evaluator.strategies
+    strategies = evaluator.strategies
     return f"""
     <h1>Indian Poker Strategy Evaluator</h1>
     <p>Upload your strategies to see how they perform against each other</p>
@@ -108,7 +92,9 @@ def upload_file():
         if file and allowed_file(file.filename):
             filename = file.filename
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            evaluator_wrapper.restart()
+            evaluator.stop()
+            evaluator.load_strategies()
+            evaluator.evaluate_strategies()
             return 'File successfully uploaded'
     
     return '''

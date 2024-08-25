@@ -13,9 +13,9 @@ class RandomStrategy(Strategy):
         if action == 'fold':
             return Action('fold')
         elif action == 'call':
-            return Action('call', amount=state.get_amount_to_call_for_player(self.player_id))
+            return Action('call', amount=state.get_delta_to_call_for_player(self.player_id))
         elif action == 'raise':
-            return Action('raise', amount=state.get_minimum_raise_amount_for_player(self.player_id))
+            return Action('raise', amount=state.get_minimum_raise_delta_for_player(self.player_id))
         elif action == 'check':
             return Action('check')
 

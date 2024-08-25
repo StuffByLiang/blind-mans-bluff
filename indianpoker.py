@@ -103,21 +103,25 @@ class RoundState:
 
         This will be false if the round is still ongoing and passed as a parameter to the make_decision method of the Strategy class.
         """
-        last_action_for_each_player = {player_id: None for player_id in self.player_information}
-        for action in self.betting_history:
-            last_action_for_each_player[action.player_id] = action
+        # if the first couple n-1 actions are all folds, then the round is finished
+        if len(self.betting_history) == len(self.player_information) - 1:
+            count = 0
+            for action in self.betting_history:
+                if action.action_type == 'fold':
+                    count += 1
+            if count == len(self.betting_history):
+                return True
 
-        number_of_players_who_need_to_move = 0
-
-        for player in self.player_information.values():
-            if player.has_folded or player.remaining_stack_size == 0:
-                continue
-            if self.get_money_put_in_by_player(player.player_id) != self.current_bet_total:
-                number_of_players_who_need_to_move += 1
-            elif last_action_for_each_player[player.player_id] is None:
-                number_of_players_who_need_to_move += 1
-
-        return number_of_players_who_need_to_move <= 1
+        def ok(player: PlayerInformation):
+            return any([
+                player.has_folded,
+                player.remaining_stack_size == 0,
+                self.get_money_put_in_by_player(player.player_id) == self.current_bet_total,
+            ])
+        return (
+            len(self.betting_history) >= len(self.player_information)
+            and all(ok(player) for player in self.player_information.values())
+          )
 
     def can_check_currently(self, player_id) -> bool:
         """
@@ -146,7 +150,7 @@ class RoundState:
         else:
             return Action('call', player_id=player_id, delta=self.player_information[player_id].remaining_stack_size)
 
-    def get_minimum_call_and_raise_delta_for_player(self, player_id: str) -> int:
+    def get_minimum_raise_delta_for_player(self, player_id: str) -> int:
         """
         Returns the minimum delta that the player can raise.
 
@@ -341,7 +345,7 @@ class IndianPokerGame:
 
             elif action.action_type == 'raise':
                 call_and_raise_delta = action.delta # this includes the amount needed to call as well
-                if call_and_raise_delta < round_state.get_minimum_call_and_raise_delta_for_player(player_id):
+                if call_and_raise_delta < round_state.get_minimum_raise_delta_for_player(player_id):
                     logger.debug(f"{player_id} folds due to invalid raise amount.")
                     invalid_action = True
                 elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
@@ -437,7 +441,7 @@ if __name__ == "__main__":
             elif action == 'call':
                 return Action('call', delta=game_state.get_delta_to_call_for_player(self.player_id))
             elif action == 'raise':
-                return Action('raise', delta=game_state.get_minimum_call_and_raise_delta_for_player(self.player_id))
+                return Action('raise', delta=game_state.get_minimum_raise_delta_for_player(self.player_id))
             elif action == 'check':
                 return Action('check')
 
@@ -447,4 +451,4 @@ if __name__ == "__main__":
         'Player 3': RandomStrategy('Player 3'),
     }
 
-    simulate_game(strategies, ante=5, starting_stack=200, rounds=10000)
+    simulate_game(strategies, ante=5, starting_stack=200, rounds=10)

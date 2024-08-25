@@ -416,7 +416,10 @@ class IndianPokerGame:
 
         # Call reveal_round for each strategy
         for strategy in self.strategies.values():
-            strategy.reveal_round(round_state)
+            try:
+                strategy.reveal_round(round_state)
+            except Exception as e:
+                self.logger.exception(f"Error calling reveal_round for {strategy.player_id}")
         
         return round_state
 

@@ -61,7 +61,7 @@ class Evaluator:
     def evaluate_strategies(self):
         ante=5
         starting_stack=200
-        rounds=100
+        rounds=1000
 
         last_write_time = datetime.datetime.now()
 

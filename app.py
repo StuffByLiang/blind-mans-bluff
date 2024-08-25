@@ -139,17 +139,18 @@ def send_results(path):
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():
+    error_msg = ""
     if request.method == 'POST':
         # Check if the post request has the file part
         if 'file' not in request.files:
-            return 'No file part'
+            error_msg = 'No file part'
         
         file = request.files['file']
         
         # If user does not select file, browser also
         # submits an empty part without filename
         if file.filename == '':
-            return 'No selected file'
+            error_msg = 'No selected file'
         
         if file and allowed_file(file.filename):
             filename = file.filename
@@ -157,11 +158,12 @@ def upload_file():
             evaluator.stop()
             evaluator.load_strategies()
             evaluator.evaluate_strategies()
-            return 'File successfully uploaded'
+            error_msg = 'File successfully uploaded'
     
-    return '''
+    return f'''
     <!doctype html>
     <title>Upload File</title>
+    <p style="color:red">{error_msg}</p>
     <h1>Upload new File</h1>
     <form method="post" enctype="multipart/form-data" action="/upload">
       <input type="file" name="file">

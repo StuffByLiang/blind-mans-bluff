@@ -111,7 +111,6 @@ class RoundState:
                 player.stack_size == 0,
                 player.current_bet == self.current_bet,
             ])
-        print([p.current_bet for p in self.player_information.values()], self.current_bet)
         return (
             len(self.betting_history) >= len(self.player_information)
             and all(ok(player) for player in self.player_information.values())

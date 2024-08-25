@@ -254,7 +254,7 @@ class IndianPokerGame:
 
         return RoundState(pot=pot, player_information=player_information)
 
-    def play_round(self):
+    def play_round(self) -> RoundState:
         """
         Play starts with the first player and goes in order
 
@@ -388,8 +388,6 @@ class IndianPokerGame:
             else:
                 self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size
         self.logger.debug(f"Stack Sizes: {self.stack_sizes}")
-        if sum(self.stack_sizes.values()) != 600:
-            self.logger.debug(f"ERROR: Stack sizes not equal to 600: {self.stack_sizes}")
 
         self.historical_stack_sizes.append( deepcopy( self.stack_sizes ) )
 
@@ -399,6 +397,8 @@ class IndianPokerGame:
                 self.busted_players.add(pid)
                 self.non_busted_player_id_order.remove(pid)
                 self.turn_busted[pid] = len(self.historical_stack_sizes)
+        
+        return round_state
 
     def has_at_least_2_players_left(self):
         return len(self.stack_sizes) - len(self.busted_players) >= 2
@@ -413,6 +413,19 @@ def simulate_game(strategies: dict[str, Strategy], ante: int, starting_stack: in
             break
     logger.debug(f"\nFinal Stack Sizes: {game.stack_sizes}")
     return game
+
+def get_example_rounds(strategies: dict[str, Strategy], ante: int, starting_stack: int, rounds: int, logger = logging.getLogger(__name__)) -> list[RoundState]:
+    game = IndianPokerGame(strategies, ante, starting_stack, logger=logger)
+    rounds = []
+    for round_number in range(1, rounds + 1):
+        logger.debug(f"\n--- Round {round_number} ---")
+        round_state = game.play_round()
+        rounds.append(round_state)
+        if not game.has_at_least_2_players_left():
+            logger.debug("Game over! Less than 2 players remaining.")
+            break
+    logger.debug(f"\nFinal Stack Sizes: {game.stack_sizes}")
+    return rounds
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(message)s')

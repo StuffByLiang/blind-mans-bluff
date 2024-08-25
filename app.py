@@ -2,7 +2,7 @@ import logging
 from flask import Flask, request, send_from_directory
 from evaluator import Evaluator
 from threading import Thread
-from indianpoker import simulate_game
+from indianpoker import simulate_game, get_example_rounds
 from io import StringIO
 import os
 
@@ -54,6 +54,7 @@ def hello_world():
     <p>Upload your strategies to see how they perform against each other</p>
     <a href="/results">View Results</a> <br />
     <a href="/examplegame">View Example Game</a> <br />
+    <a href="/examplegame">View Example Interesting Game</a> <br />
     <a href="/upload">Upload New Strategy</a> <br />
     Current strategies: {list(strategies.keys())}
     """
@@ -94,6 +95,30 @@ def example_game():
     logger.propagate = False
 
     simulate_game(evaluator.strategies, 5, 200, 1, logger)
+
+    # now grab logs from the logger
+    logs = log_stream.getvalue()
+    logs = "<br />".join(logs.split('\n'))
+    return logs
+
+@app.route("/exampleinterestinggame")
+def example_interesting_game():
+    while True:
+        logger = logging.getLogger("ExampleGame")
+        logger.setLevel(logging.DEBUG)
+        log_stream = StringIO()
+        handler = logging.StreamHandler(log_stream)
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        handler.setLevel(logging.DEBUG)
+
+        logger.addHandler(handler)
+        logger.propagate = False
+        rounds = get_example_rounds(evaluator.strategies, 5, 200, 1, logger)
+
+        if all(action.action_type == "check" for action in rounds[0].betting_history):
+            continue
+
+        break
 
     # now grab logs from the logger
     logs = log_stream.getvalue()

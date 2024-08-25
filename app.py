@@ -80,6 +80,13 @@ def results():
     except FileNotFoundError:
         return "No results yet"
 
+@app.route("/getstate/<strategy>")
+def get_state(strategy):
+    strategy = evaluator.strategies.get(strategy)
+    if strategy is None:
+        return "Strategy not found"
+    return strategy.print_state()
+
 @app.route("/examplegame")
 def example_game():
     logger = logging.getLogger("ExampleGame")
@@ -94,7 +101,8 @@ def example_game():
     logger.addHandler(handler)
     logger.propagate = False
 
-    simulate_game(evaluator.strategies, 5, 200, 1, logger)
+    strategies = evaluator.get_new_instantiated_strategies()
+    simulate_game(strategies, 5, 200, 1, logger)
 
     logger.removeHandler(handler)
     handler.close()
@@ -115,8 +123,8 @@ def example_interesting_game():
     logger.addHandler(handler)
     logger.propagate = False
     while True:
-
-        rounds = get_example_rounds(evaluator.strategies, 5, 200, 1, logger)
+        strategies = evaluator.get_new_instantiated_strategies()
+        rounds = get_example_rounds(strategies, 5, 200, 1, logger)
 
         if all(action.action_type == "check" for action in rounds[0].betting_history):
             log_stream.truncate(0)

@@ -15,12 +15,15 @@ RESULTS_DIR = Path('results')
 class Evaluator:
     def __init__(self, logger = logging.getLogger(__name__)):
         self.logger = logger
-        self.strategies = {}
-        self.number_of_chips = {}
-        self.number_of_games = {}
+        self.strategy_classes: dict[str, Strategy] = {}
+        self.strategies: dict[str, Strategy] = {}
+        self.number_of_chips: dict[str, int] = {}
+        self.number_of_games: dict[str, int] = {}
         self.request_stop = False
         self.stopped = False
-
+    
+    def get_new_instantiated_strategies(self):
+        return {strategy: self.strategy_classes[strategy]() for strategy in self.strategy_classes}
 
     def load_strategies(self):
         self.strategies = {}
@@ -30,6 +33,7 @@ class Evaluator:
                     strategy_module = __import__(f'strategies.{file[:-3]}', fromlist=[''])
                     reload(strategy_module)
                     strategy_class: Strategy = getattr(strategy_module, "strategy")
+                    self.strategy_classes[strategy_class.player_id] = strategy_class
                     self.strategies[strategy_class.player_id] = strategy_class()
                     self.logger.info(f"Loaded strategy {strategy_class.player_id} from file {file})")
                 except Exception as e:

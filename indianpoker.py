@@ -133,6 +133,12 @@ class RoundState:
         call_delta = self.get_delta_to_call_for_player(player_id)
         raise_delta = max(min(self.last_raise_delta + call_delta, self.player_information[player_id].remaining_stack_size), 1)
         return raise_delta
+    
+    def get_winning_player_id(self) -> str:
+        """
+        Returns the player_id of the winning player in the round.
+        """
+        return max([player.player_id for player in self.player_information.values() if not player.has_folded], key=lambda pid: self.player_information[pid].card)
 
     def __repr__(self):
         return f"RoundState(pot={self.pot}, current_bet_total={self.current_bet_total}, last_raise_delta={self.last_raise_delta}, betting_history={self.betting_history}, player_information={self.player_information})"
@@ -149,6 +155,11 @@ class RoundState:
 
 
 class Strategy:
+    """
+    Strategy class to represent a player's strategy in the game. You may store state in this and assume that state is not cleared between games or rounds.
+
+    You may also assume that make_decision will be called sequentially as the game progresses
+    """
     player_id = "" # The player ID for the strategy. You must override this.
 
     def make_decision(self, state: RoundState) -> Action:
@@ -163,11 +174,17 @@ class Strategy:
         """
         pass
 
-    def start_new_round(self) -> None:
+    def reveal_round(self, state: RoundState) -> None:
         """
-        Called at the start of a new round.
+        Called at the end of every round. This is where you can see the final state of the round.
         """
         pass
+
+    def print_state(self) -> str:
+        """
+        Returns a string representation of the strategy's state. You may use this for debugging purposes.
+        """
+        return "print_state not implemented"
 
 class IndianPokerGame:
     def __init__(self, strategies: dict[str, Strategy], ante: int, starting_stack: int, logger = logging.getLogger(__name__)):
@@ -388,7 +405,6 @@ class IndianPokerGame:
             else:
                 self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size
         self.logger.debug(f"Stack Sizes: {self.stack_sizes}")
-
         self.historical_stack_sizes.append( deepcopy( self.stack_sizes ) )
 
         # update busted players
@@ -397,6 +413,10 @@ class IndianPokerGame:
                 self.busted_players.add(pid)
                 self.non_busted_player_id_order.remove(pid)
                 self.turn_busted[pid] = len(self.historical_stack_sizes)
+
+        # Call reveal_round for each strategy
+        for strategy in self.strategies.values():
+            strategy.reveal_round(round_state)
         
         return round_state
 

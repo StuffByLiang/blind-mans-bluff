@@ -362,7 +362,7 @@ class IndianPokerGame:
                         break
                 else:
                     player_info.has_folded = True
-                    round_state.betting_history.append(Action('fold'))
+                    round_state.betting_history.append(Action('fold', player_id=player_id))
                     made_move += 1
                 
             if made_move == need_action:

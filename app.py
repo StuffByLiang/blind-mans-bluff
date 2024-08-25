@@ -23,7 +23,13 @@ if not os.path.exists('logs'):
     os.makedirs('logs')
 handler = logging.FileHandler('logs/evaluator.log', mode='w+')
 handler.setFormatter(logging.Formatter('%(message)s'))
-handler.setLevel(logging.INFO)
+
+if os.getenv('VERBOSE'):
+    print("Verbose mode enabled")
+    handler.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
+else:
+    handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 logger.propagate = False
 

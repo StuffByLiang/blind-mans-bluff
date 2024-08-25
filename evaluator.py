@@ -77,7 +77,7 @@ class Evaluator:
                     self.request_stop = False
                     self.stopped = True
                     return
-                game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
+                game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds, self.logger)
 
                 for strategy in strategies:
                     num_games_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.historical_stack_sizes )

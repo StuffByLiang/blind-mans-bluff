@@ -66,7 +66,7 @@ class Evaluator:
         last_write_time = datetime.datetime.now()
 
         last_log_game = 0
-        log_every = 100
+        log_every = 1000
         last_write_num = 0
 
         self.stopped = True
@@ -87,7 +87,7 @@ class Evaluator:
 
             avg_win_rate = {}
             for strategy in self.strategies:
-                avg_win_rate[strategy] = (self.number_of_chips[strategy]) * rounds / self.number_of_games[strategy]
+                avg_win_rate[strategy] = (self.number_of_chips[strategy]) * 1000 / self.number_of_games[strategy]
 
             # num games is same for each strategy so can just take the first one
             number_of_games = list(self.number_of_games.values())[0]

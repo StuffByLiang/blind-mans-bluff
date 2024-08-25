@@ -5,9 +5,6 @@ from itertools import cycle
 import random
 import logging
 
-logger = logging.getLogger(__name__)
-
-
 class Action:
     def __init__(self, action_type: str, player_id: str = "", delta: int = 0):
         """
@@ -170,7 +167,7 @@ class Strategy:
         pass
 
 class IndianPokerGame:
-    def __init__(self, strategies: dict[str, Strategy], ante: int, starting_stack: int):
+    def __init__(self, strategies: dict[str, Strategy], ante: int, starting_stack: int, logger = logging.getLogger(__name__)):
         """
         Initialize the game with the given strategies, ante, and starting stack sizes.
 
@@ -193,6 +190,7 @@ class IndianPokerGame:
         self.player_id_order = [strategy.player_id for strategy in strategies.values()]
         self.first_player_idx = 0
         self.busted_players = set()
+        self.logger = logger
         random.shuffle(self.player_id_order)
 
     def make_shuffled_deck(self) -> list[int]:
@@ -269,7 +267,7 @@ class IndianPokerGame:
         num_players = len( round_state.player_information )
         # debug log each player's card
         for player_info in round_state.player_information.values():
-            logger.debug(f"{player_info.player_id} received card: {player_info.card}")
+            self.logger.debug(f"{player_info.player_id} received card: {player_info.card}")
 
         # Perform betting rounds
         last_bet = False
@@ -286,48 +284,48 @@ class IndianPokerGame:
                     break
                 # Get decision from the player's strategy
                 while (player_info := round_state.player_information[player_id]).has_folded:
-                    logger.debug(f"skipping {player_id} because they have has folded")
+                    self.logger.debug(f"skipping {player_id} because they have has folded")
                     player_id = next( player_id_cycle )
                     
-                logger.debug(f"--- Action on {player_id} ---")
+                self.logger.debug(f"--- Action on {player_id} ---")
                 action = None
                 try:
                     strategy = self.strategies[player_id]
                     action = strategy.make_decision(round_state.get_state_hiding_card_for_player_id(player_id))
                     action.player_id = player_id
                 except Exception as e:
-                    logger.exception(f"Error getting decision for {player_id}, folding.")
+                    self.logger.exception(f"Error getting decision for {player_id}, folding.")
                     action = Action('fold', player_id=player_id)
                 
                 # Process action
                 invalid_action = False
                 if action.action_type == 'fold':
-                    logger.debug(f"{player_id} folds.")
+                    self.logger.debug(f"{player_id} folds.")
                     player_info.has_folded = True
 
                 elif action.action_type == 'call':
                     call_delta = action.delta
                     if call_delta == 0:
-                        logger.debug(f"{player_id} folds due to a call amount of 0")
+                        self.logger.debug(f"{player_id} folds due to a call amount of 0")
                         invalid_action = True
                     elif call_delta != round_state.get_delta_to_call_for_player(player_id):
-                        logger.debug(f"{player_id} folds due to invalid call amount.")
+                        self.logger.debug(f"{player_id} folds due to invalid call amount.")
                         invalid_action = True
                     elif call_delta > round_state.player_information[player_id].remaining_stack_size:
-                        logger.debug(f"{player_id} folds due to stack size too small.")
+                        self.logger.debug(f"{player_id} folds due to stack size too small.")
                         invalid_action = True
                     else:
                         round_state.player_information[player_id].remaining_stack_size -= call_delta
                         round_state.pot += call_delta
-                        logger.debug(f"{player_id} calls {call_delta}.")
+                        self.logger.debug(f"{player_id} calls {call_delta}.")
 
                 elif action.action_type == 'raise':
                     call_and_raise_delta = action.delta # this includes the amount needed to call as well
                     if call_and_raise_delta < round_state.get_minimum_raise_delta_for_player(player_id):
-                        logger.debug(f"{player_id} folds due to invalid raise amount.")
+                        self.logger.debug(f"{player_id} folds due to invalid raise amount.")
                         invalid_action = True
                     elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
-                        logger.debug(f"{player_id} folds due to stack size too small.")
+                        self.logger.debug(f"{player_id} folds due to stack size too small.")
                         invalid_action = True
                     else:
                         player_current_bet = round_state.get_money_put_in_by_player(player_id)
@@ -339,17 +337,17 @@ class IndianPokerGame:
                         round_state.current_bet_total = player_current_bet + call_delta + raise_delta
                         round_state.player_information[player_id].remaining_stack_size -= call_and_raise_delta
 
-                        logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
+                        self.logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
 
                 elif action.action_type == 'check':
                     if not round_state.can_check_currently(player_id):
-                        logger.debug(f"{player_id} folds due to invalid check.")
+                        self.logger.debug(f"{player_id} folds due to invalid check.")
                         invalid_action = True
                     else:
-                        logger.debug(f"{player_id} checks.")
+                        self.logger.debug(f"{player_id} checks.")
 
                 else:
-                    logger.debug(f"{player_id} folds due to invalid action type.")
+                    self.logger.debug(f"{player_id} folds due to invalid action type.")
                     invalid_action = True
 
                 player_id = next( player_id_cycle )
@@ -375,11 +373,11 @@ class IndianPokerGame:
         winner = None
         if len(remaining_players) == 1:
             winner = remaining_players[0]
-            logger.debug(f"{winner} wins the pot of {round_state.pot} by default.")
+            self.logger.debug(f"{winner} wins the pot of {round_state.pot} by default.")
         else:
             # Compare cards to find the winner
             winner = max(remaining_players, key=lambda pid: round_state.player_information[pid].card)
-            logger.debug(f"{winner} wins the pot of {round_state.pot} with a higher card.")
+            self.logger.debug(f"{winner} wins the pot of {round_state.pot} with a higher card.")
 
         # Update stack_sizes of each player
         for pid in round_state.player_information:
@@ -387,9 +385,9 @@ class IndianPokerGame:
                 self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size + round_state.pot
             else:
                 self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size
-        logger.debug(f"Stack Sizes: {self.stack_sizes}")
+        self.logger.debug(f"Stack Sizes: {self.stack_sizes}")
         if sum(self.stack_sizes.values()) != 600:
-            logger.debug(f"ERROR: Stack sizes not equal to 600: {self.stack_sizes}")
+            self.logger.debug(f"ERROR: Stack sizes not equal to 600: {self.stack_sizes}")
 
         self.historical_stack_sizes.append( deepcopy( self.stack_sizes ) )
 
@@ -401,8 +399,8 @@ class IndianPokerGame:
     def has_at_least_2_players_left(self):
         return len(self.stack_sizes) - len(self.busted_players) >= 2
 
-def simulate_game(strategies: dict[str, Strategy], ante: int, starting_stack: int, rounds: int) -> IndianPokerGame:
-    game = IndianPokerGame(strategies, ante, starting_stack)
+def simulate_game(strategies: dict[str, Strategy], ante: int, starting_stack: int, rounds: int, logger = logging.getLogger(__name__)) -> IndianPokerGame:
+    game = IndianPokerGame(strategies, ante, starting_stack, logger=logger)
     for round_number in range(1, rounds + 1):
         logger.debug(f"\n--- Round {round_number} ---")
         game.play_round()

@@ -2,6 +2,8 @@ import logging
 from flask import Flask, request, send_from_directory
 from evaluator import Evaluator
 from threading import Thread
+from indianpoker import simulate_game
+from io import StringIO
 import os
 
 app = Flask(__name__)
@@ -45,6 +47,7 @@ def hello_world():
     <h1>Indian Poker Strategy Evaluator</h1>
     <p>Upload your strategies to see how they perform against each other</p>
     <a href="/results">View Results</a> <br />
+    <a href="/examplegame">View Example Game</a> <br />
     <a href="/upload">Upload New Strategy</a> <br />
     Current strategies: {list(strategies.keys())}
     """
@@ -69,6 +72,27 @@ def results():
             return results + images
     except FileNotFoundError:
         return "No results yet"
+
+@app.route("/examplegame")
+def example_game():
+    logger = logging.getLogger("ExampleGame")
+    logger.setLevel(logging.DEBUG)
+
+    # get print of logger to a string
+    log_stream = StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    handler.setLevel(logging.DEBUG)
+
+    logger.addHandler(handler)
+    logger.propagate = False
+
+    simulate_game(evaluator.strategies, 5, 200, 1, logger)
+
+    # now grab logs from the logger
+    logs = log_stream.getvalue()
+    logs = "<br />".join(logs.split('\n'))
+    return logs
     
 # add results as a public folder
 @app.route('/results/<path:path>')

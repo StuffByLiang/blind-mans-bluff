@@ -206,6 +206,7 @@ class IndianPokerGame:
         self.ante = ante
 
         self.stack_sizes = {strategy.player_id: starting_stack for strategy in strategies.values()}
+        self.historical_stack_sizes = [ deepcopy( self.stack_sizes ) ]
         self.player_id_order = [strategy.player_id for strategy in strategies.values()]
         self.first_player_idx = 0
         self.busted_players = set()
@@ -385,6 +386,7 @@ class IndianPokerGame:
             else:
                 self.stack_sizes[pid] -= round_state.get_money_put_in_by_player(pid)
         logger.debug(f"Stack Sizes: {self.stack_sizes}")
+        self.historical_stack_sizes.append( deepcopy( self.stack_sizes ) )
 
         # update busted players
         for pid in self.stack_sizes:

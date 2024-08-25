@@ -48,6 +48,9 @@ class PlayerInformation:
     remaining_stack_size: int
     has_folded: bool = False
 
+    def __repr__(self):
+        return f"PlayerInformation(player_id={self.player_id}, order={self.order}, card={self.card}, remaining_stack_size={self.remaining_stack_size}, has_folded={self.has_folded})"
+
 class RoundState:
     """
     RoundState class to store the state of the round.
@@ -175,24 +178,27 @@ class IndianPokerGame:
         - strategies: A dict of player_id -> Strategy objects representing the players in the game.
         - ante: The ante amount that a player has to pay at the start of each round.
         - starting_stack: The starting stack size for each player.
+        - logger: The logger object to use for logging.
 
         Attributes:
         - stack_sizes: A dict of player_id -> stack_size representing the remaining stack size of each player.
+        - historical_stack_sizes: A list of stack_sizes at the end of each round.
+        - turn_busted: A dict of player_id -> round_number representing the round number when the player busted.
         - player_id_order: A list of player IDs representing the order of the players.
         - first_player_idx: The index of the first player in the player_id_order list.
         - buster_players: A set of player IDs who have busted (stack size == 0).
         """
         self.strategies = strategies
         self.ante = ante
+        self.logger = logger
 
         self.stack_sizes = {strategy.player_id: starting_stack for strategy in strategies.values()}
         self.historical_stack_sizes = [ deepcopy( self.stack_sizes ) ]
         self.turn_busted = {}
-        self.player_id_order = [strategy.player_id for strategy in strategies.values()]
+        self.non_busted_player_id_order = [strategy.player_id for strategy in strategies.values()]
         self.first_player_idx = 0
         self.busted_players = set()
-        self.logger = logger
-        random.shuffle(self.player_id_order)
+        random.shuffle(self.non_busted_player_id_order)
 
     def make_shuffled_deck(self) -> list[int]:
         """
@@ -220,33 +226,28 @@ class IndianPokerGame:
         player_information = OrderedDict()
 
         # Determine the starting index based on first_player_idx
-        num_players = len(self.player_id_order)
-        player_cycle = cycle(self.player_id_order)
+        num_players = len(self.non_busted_player_id_order)
+        non_busted_player_cycle = cycle(self.non_busted_player_id_order)
 
-        # Skip players until reaching the starting player
+        # Skip players until we reached the starting player
         for _ in range(self.first_player_idx):
-            next(player_cycle)
-
-        # Skip players until reaching the first player that has not busted
-        player_id = next(player_cycle)
-        while player_id in self.busted_players:
-            player_id = next(player_cycle)
+            next(non_busted_player_cycle)
 
         # first player pays the entire ante or whatever is left in their stack
+        player_id = next(non_busted_player_cycle)
         ante_amount = min(self.stack_sizes[player_id], self.ante)
         self.stack_sizes[player_id] -= ante_amount
         pot += ante_amount
 
         # the player after the ante payer gets the first card
         for idx in range(num_players):
-            player_id = next(player_cycle)
-            if player_id not in self.busted_players: # Skip busted players
-                player_information[player_id] = PlayerInformation(
-                    player_id=player_id,
-                    order=idx,
-                    card=deck.pop(),
-                    remaining_stack_size=self.stack_sizes[player_id]
-                )
+            player_id = next(non_busted_player_cycle)
+            player_information[player_id] = PlayerInformation(
+                player_id=player_id,
+                order=idx,
+                card=deck.pop(),
+                remaining_stack_size=self.stack_sizes[player_id]
+            )
 
         # update first player index for the next round
         self.first_player_idx = (self.first_player_idx + 1) % num_players
@@ -394,8 +395,9 @@ class IndianPokerGame:
 
         # update busted players
         for pid in self.stack_sizes:
-            if self.stack_sizes[pid] == 0:
+            if self.stack_sizes[pid] == 0 and pid not in self.busted_players:
                 self.busted_players.add(pid)
+                self.non_busted_player_id_order.remove(pid)
                 self.turn_busted[pid] = len(self.historical_stack_sizes)
 
     def has_at_least_2_players_left(self):

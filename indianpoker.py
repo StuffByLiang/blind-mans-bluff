@@ -416,16 +416,16 @@ def simulate_game(strategies: dict[str, Strategy], ante: int, starting_stack: in
 
 def get_example_rounds(strategies: dict[str, Strategy], ante: int, starting_stack: int, rounds: int, logger = logging.getLogger(__name__)) -> list[RoundState]:
     game = IndianPokerGame(strategies, ante, starting_stack, logger=logger)
-    rounds = []
+    round_states = []
     for round_number in range(1, rounds + 1):
         logger.debug(f"\n--- Round {round_number} ---")
         round_state = game.play_round()
-        rounds.append(round_state)
+        round_states.append(round_state)
         if not game.has_at_least_2_players_left():
             logger.debug("Game over! Less than 2 players remaining.")
             break
     logger.debug(f"\nFinal Stack Sizes: {game.stack_sizes}")
-    return rounds
+    return round_states
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(message)s')

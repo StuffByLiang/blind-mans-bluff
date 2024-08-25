@@ -54,7 +54,7 @@ def hello_world():
     <p>Upload your strategies to see how they perform against each other</p>
     <a href="/results">View Results</a> <br />
     <a href="/examplegame">View Example Game</a> <br />
-    <a href="/examplegame">View Example Interesting Game</a> <br />
+    <a href="/exampleinterestinggame">View Example Interesting Game</a> <br />
     <a href="/upload">Upload New Strategy</a> <br />
     Current strategies: {list(strategies.keys())}
     """
@@ -96,6 +96,9 @@ def example_game():
 
     simulate_game(evaluator.strategies, 5, 200, 1, logger)
 
+    logger.removeHandler(handler)
+    handler.close()
+
     # now grab logs from the logger
     logs = log_stream.getvalue()
     logs = "<br />".join(logs.split('\n'))
@@ -103,22 +106,26 @@ def example_game():
 
 @app.route("/exampleinterestinggame")
 def example_interesting_game():
+    logger = logging.getLogger("Example Interesting Game")
+    logger.setLevel(logging.DEBUG)
+    log_stream = StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    handler.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
+    logger.propagate = False
     while True:
-        logger = logging.getLogger("ExampleGame")
-        logger.setLevel(logging.DEBUG)
-        log_stream = StringIO()
-        handler = logging.StreamHandler(log_stream)
-        handler.setFormatter(logging.Formatter('%(message)s'))
-        handler.setLevel(logging.DEBUG)
 
-        logger.addHandler(handler)
-        logger.propagate = False
         rounds = get_example_rounds(evaluator.strategies, 5, 200, 1, logger)
 
         if all(action.action_type == "check" for action in rounds[0].betting_history):
+            log_stream.truncate(0)
             continue
 
         break
+
+    logger.removeHandler(handler)
+    handler.close()
 
     # now grab logs from the logger
     logs = log_stream.getvalue()

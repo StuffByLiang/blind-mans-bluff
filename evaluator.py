@@ -5,12 +5,14 @@ import os
 import logging
 import datetime
 import matplotlib.pyplot as plt
+import itertools
 
 class Evaluator:
     def __init__(self, logger = logging.getLogger(__name__)):
         self.logger = logger
         self.strategies = {}
-        self.strategy_average_stack_size = {}
+        self.number_of_chips = {}
+        self.number_of_games = {}
         self.lock = Lock()
 
     def load_strategies(self):
@@ -24,49 +26,60 @@ class Evaluator:
                 except Exception as e:
                     self.logger.exception(f"Error loading strategy from file {file}")
         return strategies
-    
+
     def reload_strategies(self):
         with self.lock:
-            # pitch the strategies against each other 
+            # pitch the strategies against each other
             self.strategies = self.load_strategies()
             self.logger.info(f"Reloaded Strategies: strategies playing: {self.strategies}")
 
-            self.strategy_average_stack_size = {
-                strategy: 200 for strategy in self.strategies
+            self.number_of_chips = {
+                strategy: 0 for strategy in self.strategies
+            }
+            self.number_of_games = {
+                strategy: 0 for strategy in self.strategies
             }
 
-    
+
     def evaluate_strategies(self):
-        number_of_games = 0
         ante=5
         starting_stack=200
         rounds=100
 
         last_write_time = datetime.datetime.now()
 
-        log_every = 1000
+        last_log_game = 0
+        log_every = 100
 
         while True:
             with self.lock:
-                if len(self.strategies) < 2:
+                if len(self.strategies) < 3:
                     continue
-                game = simulate_game(self.strategies, ante, starting_stack, rounds)
+                for strategies in itertools.combinations(self.strategies, 3):
+                    game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
 
+                    for strategy in strategies:
+                        self.number_of_games[strategy] += 1
+                        self.number_of_chips[strategy] += game.stack_sizes[strategy]
+
+                avg_stack_size = {}
                 for strategy in self.strategies:
-                    number_of_games += 1
-                    self.strategy_average_stack_size[strategy] = (self.strategy_average_stack_size[strategy] * (number_of_games - 1) + game.stack_sizes[strategy]) / number_of_games
+                    avg_stack_size[strategy] = self.number_of_chips[strategy] / self.number_of_games[strategy]
 
-                if number_of_games % log_every == 0: 
-                    self.logger.info(f"Final Stack Sizes: {game.stack_sizes}")
-                    self.logger.info(f"Average Stack Sizes: {self.strategy_average_stack_size}")
-                if datetime.datetime.now() - last_write_time > datetime.timedelta(seconds=10):
-                    with open('results/results.txt', 'w+') as f:
+                # num games is same for each strategy so can just take the first one
+                number_of_games = list(self.number_of_games.values())[0]
+
+                if number_of_games > last_log_game + log_every:
+                    last_log_game += log_every
+                    print(f"Average Stack Sizes: {avg_stack_size}")
+                if datetime.datetime.now() - last_write_time > datetime.timedelta(seconds=1):
+                    with open('results/results.txt', 'a') as f:
                         results_json = {
                             "number_of_games": number_of_games,
-                            "strategy_average_stack_size": self.strategy_average_stack_size,
+                            "strategy_average_stack_size": avg_stack_size,
                             "timestamp": datetime.datetime.now().isoformat()
                         }
-                        f.write(str(results_json))
+                        f.write(str(results_json)+"\n")
                     num_rounds_used = len( game.historical_stack_sizes )
                     size_by_player = {}
                     for s in game.historical_stack_sizes:
@@ -76,13 +89,12 @@ class Evaluator:
                             size_by_player[k].append(v)
                     for k,v in size_by_player.items():
                         plt.plot( list(range(num_rounds_used)), v, label=k )
-                    plot.legend()
+                    plt.legend()
                     plt.savefig('results/results.png')
                     plt.clf()
                     last_write_time = datetime.datetime.now()
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format='%(message)s')
     evaluator = Evaluator()
     evaluator.reload_strategies()
     strategies = evaluator.evaluate_strategies()

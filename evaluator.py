@@ -82,25 +82,25 @@ class Evaluator:
                 game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
 
                 for strategy in strategies:
-                    self.number_of_games[strategy] += 1
-                    self.number_of_chips[strategy] += game.stack_sizes[strategy]
+                    self.number_of_games[strategy] += len( game.historical_stack_sizes )
+                    self.number_of_chips[strategy] += game.stack_sizes[strategy] - starting_stack
 
-            avg_stack_size = {}
+            avg_win_rate = {}
             for strategy in self.strategies:
-                avg_stack_size[strategy] = self.number_of_chips[strategy] / self.number_of_games[strategy]
+                avg_win_rate[strategy] = (self.number_of_chips[strategy]) / self.number_of_games[strategy]
 
             # num games is same for each strategy so can just take the first one
             number_of_games = list(self.number_of_games.values())[0]
 
             if number_of_games > last_log_game + log_every:
                 last_log_game += log_every
-                self.logger.info(f"Average Stack Sizes: {avg_stack_size}")
+                self.logger.info(f"Average Win Rate: {avg_win_rate}")
 
             if datetime.datetime.now() - last_write_time > datetime.timedelta(seconds=1):
                 with open('results/results.txt', 'a') as f:
                     results_json = {
                         "number_of_games": number_of_games,
-                        "strategy_average_stack_size": avg_stack_size,
+                        "strategy_win_rate": avg_win_rate,
                         "timestamp": datetime.datetime.now().isoformat()
                     }
                     f.write(str(results_json)+"\n")

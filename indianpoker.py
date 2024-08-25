@@ -72,7 +72,6 @@ class RoundState:
         self.pot = pot
         self.current_bet = 0
         self.player_information = player_information
-        self.player_information = player_information
         self.betting_history = []
 
     def get_state_hiding_card_for_player_id(self, player_id: str):
@@ -87,7 +86,7 @@ class RoundState:
         """
         Returns the total amount of money put in by the player in the current round.
         """
-        return sum(action.amount for action in self.betting_history if action.player_id == player_id)
+        return max(action.amount for action in self.betting_history if action.player_id == player_id)
 
     def is_player_all_in(self, player_id: str) -> bool:
         """

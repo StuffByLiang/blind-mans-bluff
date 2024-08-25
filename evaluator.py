@@ -4,6 +4,7 @@ from threading import Lock
 import os
 import logging
 import datetime
+import matplotlib.pyplot as plt
 
 class Evaluator:
     def __init__(self, logger = logging.getLogger(__name__)):
@@ -66,6 +67,18 @@ class Evaluator:
                             "timestamp": datetime.datetime.now().isoformat()
                         }
                         f.write(str(results_json))
+                    num_rounds_used = len( game.historical_stack_sizes )
+                    size_by_player = {}
+                    for s in game.historical_stack_sizes:
+                        for k,v in s.items():
+                            if k not in size_by_player:
+                                size_by_player[k] = []
+                            size_by_player[k].append(v)
+                    for k,v in size_by_player.items():
+                        plt.plot( list(range(num_rounds_used)), v, label=k )
+                    plot.legend()
+                    plt.savefig('results/results.png')
+                    plt.clf()
                     last_write_time = datetime.datetime.now()
 
 if __name__ == "__main__":

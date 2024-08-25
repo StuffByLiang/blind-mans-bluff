@@ -5,11 +5,7 @@ from itertools import cycle
 import random
 import logging
 
-#logger = logging.getLogger(__name__)
-class f:
-    def debug(self,s):
-        print(s)
-logger=f()
+logger = logging.getLogger(__name__)
 
 
 class Action:
@@ -98,35 +94,6 @@ class RoundState:
         Returns True if the player is all-in in the current round (and therefore cannot do any actions).
         """
         return self.player_information[player_id].remaining_stack_size == 0
-
-    def is_round_finished(self) -> bool:
-        """
-        Returns True if the round is finished:
-        - All players have folded except one.
-        - All players have called the current raiser.
-        - All players have checked.
-
-        This will be false if the round is still ongoing and passed as a parameter to the make_decision method of the Strategy class.
-        """
-        # if the first couple n-1 actions are all folds, then the round is finished
-        if len(self.betting_history) == len(self.player_information) - 1:
-            count = 0
-            for action in self.betting_history:
-                if action.action_type == 'fold':
-                    count += 1
-            if count == len(self.betting_history):
-                return True
-
-        def ok(player: PlayerInformation):
-            return any([
-                player.has_folded,
-                player.remaining_stack_size == 0,
-                self.get_money_put_in_by_player(player.player_id) == self.current_bet_total,
-            ])
-        return (
-            len(self.betting_history) >= len(self.player_information)
-            and all(ok(player) for player in self.player_information.values())
-          )
 
     def can_check_currently(self, player_id) -> bool:
         """

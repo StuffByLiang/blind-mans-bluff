@@ -86,7 +86,8 @@ class RoundState:
         """
         Returns the total amount of money put in by the player in the current round.
         """
-        return max(action.amount for action in self.betting_history if action.player_id == player_id)
+        amounts = [action.amount for action in self.betting_history if action.player_id == player_id]
+        return max(amounts) if amounts else 0
 
     def is_player_all_in(self, player_id: str) -> bool:
         """

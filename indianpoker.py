@@ -187,6 +187,7 @@ class IndianPokerGame:
 
         self.stack_sizes = {strategy.player_id: starting_stack for strategy in strategies.values()}
         self.historical_stack_sizes = [ deepcopy( self.stack_sizes ) ]
+        self.turn_busted = {}
         self.player_id_order = [strategy.player_id for strategy in strategies.values()]
         self.first_player_idx = 0
         self.busted_players = set()
@@ -395,6 +396,7 @@ class IndianPokerGame:
         for pid in self.stack_sizes:
             if self.stack_sizes[pid] == 0:
                 self.busted_players.add(pid)
+                self.turn_busted[pid] = len(self.historical_stack_sizes)
 
     def has_at_least_2_players_left(self):
         return len(self.stack_sizes) - len(self.busted_players) >= 2

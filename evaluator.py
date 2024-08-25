@@ -2,7 +2,6 @@
 from indianpoker import Strategy, IndianPokerGame, simulate_game
 from importlib import reload
 from pathlib import Path
-from threading import Lock
 import os
 import logging
 import datetime
@@ -19,7 +18,6 @@ class Evaluator:
         self.strategies = {}
         self.number_of_chips = {}
         self.number_of_games = {}
-        self.lock = Lock()
         self.request_stop = False
         self.stopped = False
 
@@ -82,7 +80,8 @@ class Evaluator:
                 game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
 
                 for strategy in strategies:
-                    self.number_of_games[strategy] += len( game.historical_stack_sizes )
+                    num_games_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.historical_stack_sizes )
+                    self.number_of_games[strategy] += num_games_for_strategy
                     self.number_of_chips[strategy] += game.stack_sizes[strategy] - starting_stack
 
             avg_win_rate = {}
@@ -121,5 +120,5 @@ class Evaluator:
 
 if __name__ == "__main__":
     evaluator = Evaluator()
-    evaluator.reload_strategies()
+    evaluator.load_strategies()
     strategies = evaluator.evaluate_strategies()

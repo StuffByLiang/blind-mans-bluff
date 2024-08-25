@@ -331,11 +331,11 @@ class IndianPokerGame:
                 elif call_delta != round_state.get_delta_to_call_for_player(player_id):
                     logger.debug(f"{player_id} folds due to invalid call amount.")
                     invalid_action = True
-                elif call_delta > self.stack_sizes[player_id]:
+                elif call_delta > round_state.player_information[player_id].remaining_stack_size:
                     logger.debug(f"{player_id} folds due to stack size too small.")
                     invalid_action = True
                 else:
-                    self.stack_sizes[player_id] -= call_delta
+                    round_state.player_information[player_id].remaining_stack_size -= call_delta
                     round_state.pot += call_delta
                     logger.debug(f"{player_id} calls {call_delta}.")
 
@@ -344,7 +344,7 @@ class IndianPokerGame:
                 if call_and_raise_delta < round_state.get_minimum_call_and_raise_delta_for_player(player_id):
                     logger.debug(f"{player_id} folds due to invalid raise amount.")
                     invalid_action = True
-                elif call_and_raise_delta > self.stack_sizes[player_id]:
+                elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
                     logger.debug(f"{player_id} folds due to stack size too small.")
                     invalid_action = True
                 else:
@@ -355,6 +355,7 @@ class IndianPokerGame:
                     round_state.pot += call_and_raise_delta
                     round_state.last_raise_delta = raise_delta
                     round_state.current_bet_total = player_current_bet + call_delta + raise_delta
+                    round_state.player_information[player_id].remaining_stack_size -= call_and_raise_delta
 
                     logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
 
@@ -391,10 +392,13 @@ class IndianPokerGame:
         # Update stack_sizes of each player
         for pid in round_state.player_information:
             if pid == winner:
-                self.stack_sizes[pid] += round_state.pot
+                self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size + round_state.pot
             else:
-                self.stack_sizes[pid] -= round_state.get_money_put_in_by_player(pid)
+                self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size
         logger.debug(f"Stack Sizes: {self.stack_sizes}")
+        if sum(self.stack_sizes.values()) != 600:
+            logger.debug(f"ERROR: Stack sizes not equal to 600: {self.stack_sizes}")
+
         self.historical_stack_sizes.append( deepcopy( self.stack_sizes ) )
 
         # update busted players
@@ -443,4 +447,4 @@ if __name__ == "__main__":
         'Player 3': RandomStrategy('Player 3'),
     }
 
-    simulate_game(strategies, ante=5, starting_stack=200, rounds=10)
+    simulate_game(strategies, ante=5, starting_stack=200, rounds=10000)

@@ -321,17 +321,17 @@ class IndianPokerGame:
                 logger.debug(f"{player_id} goes all in with {all_in_amount}.")
 
             elif action.action_type == 'call':
-                if action.amount == 0:
+                call_amount = action.amount
+                if call_amount == 0:
                     logger.debug(f"{player_id} folds due to a call amount of 0")
                     invalid_action = True
-                elif action.amount != round_state.get_amount_to_call_for_player(player_id):
+                elif call_amount != round_state.get_amount_to_call_for_player(player_id):
                     logger.debug(f"{player_id} folds due to invalid call amount.")
                     invalid_action = True
                 elif call_amount > self.stack_sizes[player_id]:
                     logger.debug(f"{player_id} folds due to stack size too small.")
                     invalid_action = True
                 else:
-                    call_amount = action.amount
                     self.stack_sizes[player_id] -= call_amount
                     round_state.pot += call_amount
                     player_info.current_bet += call_amount
@@ -352,7 +352,7 @@ class IndianPokerGame:
                     round_state.current_bet += raise_amount - call_amount
                     round_state.last_raise_amount = raise_amount - call_amount
                     player_info.current_bet += raise_amount
-                    logger.debug(f"{call_amount=} {raise_amount=} {player_info.current_bet=} {round_state.current_bet=} {self.stack_sizes[player_id]}")
+                    # logger.debug(f"{call_amount=} {raise_amount=} {player_info.current_bet=} {round_state.current_bet=} {self.stack_sizes[player_id]}")
                     logger.debug(f"{player_id} raises {raise_amount - call_amount} to a total bet of {round_state.current_bet}.")
 
             elif action.action_type == 'check':

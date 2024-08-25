@@ -5,7 +5,12 @@ from itertools import cycle
 import random
 import logging
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
+class f:
+    def debug(self,s):
+        print(s)
+logger=f()
+
 
 class Action:
     def __init__(self, action_type: str, player_id: str = "", delta: int = 0):
@@ -294,92 +299,108 @@ class IndianPokerGame:
         # Initial round setup
         round_state = self.get_initial_round_state()
         player_id_cycle = cycle(round_state.player_information.keys())
-
+        num_players = len( round_state.player_information )
         # debug log each player's card
         for player_info in round_state.player_information.values():
             logger.debug(f"{player_info.player_id} received card: {player_info.card}")
 
         # Perform betting rounds
-        while not round_state.is_round_finished():
-            player_id = next(player_id_cycle)
-            logger.debug(f"--- Action on {player_id} ---")
-            player_info = round_state.player_information[player_id]
-            if player_info.has_folded: # Skip folded players or players that are all-in (stack size == 0)
-                logger.debug(f"skipping {player_id} has folded")
-                continue
-            if round_state.is_player_all_in(player_id):
-                logger.debug(f"skipping {player_id} is all-in")
-                continue
+        last_bet = False
+        player_id = next(player_id_cycle)
+        while True:
+            num_folds = sum( 1 for p in round_state.player_information.values() if p.has_folded )
+            need_action = num_players - num_folds - (1 if last_bet else 0)
+            made_move = 0
+            for rep in range( need_action ):
+                # HACK: if everyone folds, you win
+                if sum( 1 for p in round_state.player_information.values() if p.has_folded ) == num_players - 1:
+                    made_move = need_action
+                    invalid_action = False
+                    break
+                # Get decision from the player's strategy
+                while (player_info := round_state.player_information[player_id]).has_folded:
+                    logger.debug(f"skipping {player_id} because they have has folded")
+                    player_id = next( player_id_cycle )
+                    
+                logger.debug(f"--- Action on {player_id} ---")
+                action = None
+                try:
+                    strategy = self.strategies[player_id]
+                    action = strategy.make_decision(round_state.get_state_hiding_card_for_player_id(player_id))
+                    action.player_id = player_id
+                except Exception as e:
+                    logger.exception(f"Error getting decision for {player_id}, folding.")
+                    action = Action('fold', player_id=player_id)
+                
+                # Process action
+                invalid_action = False
+                if action.action_type == 'fold':
+                    logger.debug(f"{player_id} folds.")
+                    player_info.has_folded = True
 
-            # Get decision from the player's strategy
-            action = None
-            try:
-                strategy = self.strategies[player_id]
-                action = strategy.make_decision(round_state.get_state_hiding_card_for_player_id(player_id))
-                action.player_id = player_id
-            except Exception as e:
-                logger.exception(f"Error getting decision for {player_id}, folding.")
-                action = Action('fold', player_id=player_id)
+                elif action.action_type == 'call':
+                    call_delta = action.delta
+                    if call_delta == 0:
+                        logger.debug(f"{player_id} folds due to a call amount of 0")
+                        invalid_action = True
+                    elif call_delta != round_state.get_delta_to_call_for_player(player_id):
+                        logger.debug(f"{player_id} folds due to invalid call amount.")
+                        invalid_action = True
+                    elif call_delta > round_state.player_information[player_id].remaining_stack_size:
+                        logger.debug(f"{player_id} folds due to stack size too small.")
+                        invalid_action = True
+                    else:
+                        round_state.player_information[player_id].remaining_stack_size -= call_delta
+                        round_state.pot += call_delta
+                        logger.debug(f"{player_id} calls {call_delta}.")
 
-            # Process action
-            invalid_action = False
-            if action.action_type == 'fold':
-                logger.debug(f"{player_id} folds.")
-                player_info.has_folded = True
+                elif action.action_type == 'raise':
+                    call_and_raise_delta = action.delta # this includes the amount needed to call as well
+                    if call_and_raise_delta < round_state.get_minimum_raise_delta_for_player(player_id):
+                        logger.debug(f"{player_id} folds due to invalid raise amount.")
+                        invalid_action = True
+                    elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
+                        logger.debug(f"{player_id} folds due to stack size too small.")
+                        invalid_action = True
+                    else:
+                        player_current_bet = round_state.get_money_put_in_by_player(player_id)
+                        call_delta = round_state.get_delta_to_call_for_player(player_id) # this is the amount needed to call
+                        raise_delta = call_and_raise_delta - call_delta # this is the amount raised
 
-            elif action.action_type == 'call':
-                call_delta = action.delta
-                if call_delta == 0:
-                    logger.debug(f"{player_id} folds due to a call amount of 0")
-                    invalid_action = True
-                elif call_delta != round_state.get_delta_to_call_for_player(player_id):
-                    logger.debug(f"{player_id} folds due to invalid call amount.")
-                    invalid_action = True
-                elif call_delta > round_state.player_information[player_id].remaining_stack_size:
-                    logger.debug(f"{player_id} folds due to stack size too small.")
-                    invalid_action = True
+                        round_state.pot += call_and_raise_delta
+                        round_state.last_raise_delta = raise_delta
+                        round_state.current_bet_total = player_current_bet + call_delta + raise_delta
+                        round_state.player_information[player_id].remaining_stack_size -= call_and_raise_delta
+
+                        logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
+
+                elif action.action_type == 'check':
+                    if not round_state.can_check_currently(player_id):
+                        logger.debug(f"{player_id} folds due to invalid check.")
+                        invalid_action = True
+                    else:
+                        logger.debug(f"{player_id} checks.")
+
                 else:
-                    round_state.player_information[player_id].remaining_stack_size -= call_delta
-                    round_state.pot += call_delta
-                    logger.debug(f"{player_id} calls {call_delta}.")
+                    logger.debug(f"{player_id} folds due to invalid action type.")
+                    invalid_action = True
 
-            elif action.action_type == 'raise':
-                call_and_raise_delta = action.delta # this includes the amount needed to call as well
-                if call_and_raise_delta < round_state.get_minimum_raise_delta_for_player(player_id):
-                    logger.debug(f"{player_id} folds due to invalid raise amount.")
-                    invalid_action = True
-                elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
-                    logger.debug(f"{player_id} folds due to stack size too small.")
-                    invalid_action = True
+                player_id = next( player_id_cycle )
+                # Record the action
+                if not invalid_action:
+                    round_state.betting_history.append(action)
+                    if action.action_type != 'raise':
+                        made_move += 1
+                    else:
+                        last_bet = True
+                        break
                 else:
-                    player_current_bet = round_state.get_money_put_in_by_player(player_id)
-                    call_delta = round_state.get_delta_to_call_for_player(player_id) # this is the amount needed to call
-                    raise_delta = call_and_raise_delta - call_delta # this is the amount raised
-
-                    round_state.pot += call_and_raise_delta
-                    round_state.last_raise_delta = raise_delta
-                    round_state.current_bet_total = player_current_bet + call_delta + raise_delta
-                    round_state.player_information[player_id].remaining_stack_size -= call_and_raise_delta
-
-                    logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
-
-            elif action.action_type == 'check':
-                if not round_state.can_check_currently(player_id):
-                    logger.debug(f"{player_id} folds due to invalid check.")
-                    invalid_action = True
-                else:
-                    logger.debug(f"{player_id} checks.")
-
-            else:
-                logger.debug(f"{player_id} folds due to invalid action type.")
-                invalid_action = True
-
-            # Record the action
-            if not invalid_action:
-                round_state.betting_history.append(action)
-            else:
-                player_info.has_folded = True
-                round_state.betting_history.append(Action('fold'))
+                    player_info.has_folded = True
+                    round_state.betting_history.append(Action('fold'))
+                    made_move += 1
+                
+            if made_move == need_action:
+                break
 
         # Determine the winner and update stacks
         # TODO: Implement side pot logic, winner can only win up to the amount they put in from each player
@@ -451,4 +472,4 @@ if __name__ == "__main__":
         'Player 3': RandomStrategy('Player 3'),
     }
 
-    simulate_game(strategies, ante=5, starting_stack=200, rounds=10)
+    simulate_game(strategies, ante=5, starting_stack=200, rounds=20)

@@ -69,6 +69,7 @@ class Evaluator:
                     last_write_time = datetime.datetime.now()
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG, format='%(message)s')
     evaluator = Evaluator()
     evaluator.reload_strategies()
     strategies = evaluator.evaluate_strategies()

@@ -8,14 +8,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Action:
-    def __init__(self, action_type: str, player_id: str = "", amount: int = 0):
+    def __init__(self, action_type: str, player_id: str = "", delta: int = 0):
         """
         Represents an action in the game.
 
         Parameters:
         - action_type: A string that can be 'fold', 'call', 'raise', 'check'
         - player_id: The ID of the player performing the action.
-        - amount: The amount to incrementally add to the pot if the action is 'call' or 'raise'.
+        - delta: The incremental amount that the player has put into the pot at that point for 'call' or 'raise'.
 
         Note: if the action is 'fold' or 'check', the amount is ignored.
 
@@ -25,12 +25,12 @@ class Action:
         self.action_type = action_type
         self.player_id = player_id
         if action_type == 'fold' or action_type == 'check':
-            self.amount = 0
+            self.delta = 0
         else:
-            self.amount = amount
+            self.delta = delta
 
     def __repr__(self):
-        return f"Action(type={self.action_type}, player_id={self.player_id}, amount={self.amount})"
+        return f"Action(type={self.action_type}, player_id={self.player_id}, delta={self.delta})"
 
 @dataclass
 class PlayerInformation:
@@ -47,8 +47,7 @@ class PlayerInformation:
     player_id: str
     order: int
     card: float
-    stack_size: int
-    current_bet: int = 0
+    remaining_stack_size: int
     has_folded: bool = False
 
 class RoundState:
@@ -57,22 +56,23 @@ class RoundState:
 
     Attributes:
     - pot: The current pot size.
-    - current_bet: The current bet amount.
+    - current_bet_total: The current total bet amount.
     - betting_history: A sorted list of Action taken by the players representing the betting history.
     - player_information: A sorted dict of player_id -> PlayerInformation in the order of the players.
                           The first player in this list is the starting player.
     """
     pot: int = 0
-    current_bet: int = 0
-    last_raise_amount: int = 0
+    current_bet_total: int = 0
+    last_raise_delta: int = 0
     betting_history: list[Action] = []
     player_information: OrderedDict[str, PlayerInformation] = []
 
     def __init__(self, pot: int, player_information: OrderedDict[str, PlayerInformation]):
         self.pot = pot
-        self.current_bet = 0
-        self.player_information = player_information
+        self.current_bet_total = 0
+        self.last_raise_delta = 0
         self.betting_history = []
+        self.player_information = player_information
 
     def get_state_hiding_card_for_player_id(self, player_id: str):
         """
@@ -86,13 +86,13 @@ class RoundState:
         """
         Returns the total amount of money put in by the player in the current round.
         """
-        return max(action.amount for action in self.betting_history if action.player_id == player_id)
+        return sum(action.delta for action in self.betting_history if action.player_id == player_id)
 
     def is_player_all_in(self, player_id: str) -> bool:
         """
         Returns True if the player is all-in in the current round (and therefore cannot do any actions).
         """
-        return self.player_information[player_id].stack_size == 0
+        return self.player_information[player_id].remaining_stack_size == 0
 
     def is_round_finished(self) -> bool:
         """
@@ -103,31 +103,35 @@ class RoundState:
 
         This will be false if the round is still ongoing and passed as a parameter to the make_decision method of the Strategy class.
         """
+        last_action_for_each_player = {player_id: None for player_id in self.player_information}
+        for action in self.betting_history:
+            last_action_for_each_player[action.player_id] = action
 
-        def ok(player):
-            return any([
-                player.has_folded,
-                player.stack_size == 0,
-                player.current_bet == self.current_bet,
-            ])
-        return (
-            len(self.betting_history) >= len(self.player_information)
-            and all(ok(player) for player in self.player_information.values())
-          )
+        number_of_players_who_need_to_move = 0
+
+        for player in self.player_information.values():
+            if player.has_folded or player.remaining_stack_size == 0:
+                continue
+            if self.get_money_put_in_by_player(player.player_id) != self.current_bet_total:
+                number_of_players_who_need_to_move += 1
+            elif last_action_for_each_player[player.player_id] is None:
+                number_of_players_who_need_to_move += 1
+
+        return number_of_players_who_need_to_move <= 1
 
     def can_check_currently(self, player_id) -> bool:
         """
         Returns True if the player can check currently.
         """
-        return self.get_money_put_in_by_player(player_id) == self.current_bet
+        return self.get_money_put_in_by_player(player_id) == self.current_bet_total
 
-    def get_amount_to_call_for_player(self, player_id: str) -> int:
+    def get_delta_to_call_for_player(self, player_id: str) -> int:
         """
-        Returns the amount that the player needs to make a valid call.
+        Returns the delta that the player needs to make a valid call.
 
         This is either the difference between the current bet and the money put in by the player, or the player's remaining stack size.
         """
-        return min(self.player_information[player_id].stack_size, self.current_bet - self.get_money_put_in_by_player(player_id))
+        return min(self.player_information[player_id].remaining_stack_size, self.current_bet_total - self.get_money_put_in_by_player(player_id))
 
     def get_all_in_action_for_player_id(self, player_id: str) -> Action:
         """
@@ -137,26 +141,25 @@ class RoundState:
 
         if the player's stack size < the current bet, it considered a "call" with a smaller amount
         """
-        if self.player_information[player_id].stack_size > self.current_bet:
-            return Action('raise', player_id=player_id, amount=self.player_information[player_id].stack_size)
+        if self.player_information[player_id].remaining_stack_size > self.current_bet_total:
+            return Action('raise', player_id=player_id, delta=self.player_information[player_id].remaining_stack_size)
         else:
-            return Action('call', player_id=player_id, amount=self.player_information[player_id].stack_size)
+            return Action('call', player_id=player_id, delta=self.player_information[player_id].remaining_stack_size)
 
-    def get_minimum_raise_amount_for_player(self, player_id: str) -> int:
+    def get_minimum_call_and_raise_delta_for_player(self, player_id: str) -> int:
         """
-        Returns the minimum amount that the player can raise.
+        Returns the minimum delta that the player can raise.
 
-        You must raise at minimum the last raise amount, or 1, UNLESS it is an all in, in which case there are no minimum limitations to a raise.
+        You must raise at minimum the last raise delta, or 1, UNLESS it is an all in, in which case there are no minimum limitations to a raise.
 
-        This needs to be in addition to the amount the player needs to call.
+        This needs to be in addition to the delta the player needs to call.
         """
-        call_amount = self.get_amount_to_call_for_player(player_id)
-        raise_amount = max(min(self.last_raise_amount + call_amount, self.player_information[player_id].stack_size), 1)
-        # logger.debug(f"{player_id=} {call_amount=} {raise_amount=}")
-        return raise_amount
+        call_delta = self.get_delta_to_call_for_player(player_id)
+        raise_delta = max(min(self.last_raise_delta + call_delta, self.player_information[player_id].remaining_stack_size), 1)
+        return raise_delta
 
     def __repr__(self):
-        return f"RoundState(pot={self.pot}, current_bet={self.current_bet}, betting_history={self.betting_history}, player_information={self.player_information})"
+        return f"RoundState(pot={self.pot}, current_bet_total={self.current_bet_total}, last_raise_delta={self.last_raise_delta}, betting_history={self.betting_history}, player_information={self.player_information})"
 
     # helpers
     def check_fold(self, player_id):
@@ -166,8 +169,7 @@ class RoundState:
       if self.can_check_currently(player_id):
         return Action("check")
       else:
-        return Action("call", amount=self.get_amount_to_call_for_player(player_id))
-
+        return Action("call", delta=self.get_delta_to_call_for_player(player_id))
 
 
 class Strategy:
@@ -178,10 +180,16 @@ class Strategy:
         Makes a decision based on the initial stack sizes, betting history, opponent cards, and the starting pot.
 
         Any invalid Action will result in a fold, thus it is recommended to check call amounts and minimum raise amounts using
-        state.get_amount_to_call_for_player(player_id) and state.get_minimum_raise_amount_for_player(player_id) respectively.
+        state.get_delta_to_call_for_player(player_id) and state.get_minimum_raise_delta_for_player(player_id) respectively.
 
         Returns:
         An Action object representing the decision. It's optional to set the player_id in the Action object
+        """
+        pass
+
+    def start_new_round(self) -> None:
+        """
+        Called at the start of a new round.
         """
         pass
 
@@ -243,8 +251,12 @@ class IndianPokerGame:
         for _ in range(self.first_player_idx):
             next(player_cycle)
 
-        # first player pays the entire ante or whatever is left in their stack
+        # Skip players until reaching the first player that has not busted
         player_id = next(player_cycle)
+        while player_id in self.busted_players:
+            player_id = next(player_cycle)
+
+        # first player pays the entire ante or whatever is left in their stack
         ante_amount = min(self.stack_sizes[player_id], self.ante)
         self.stack_sizes[player_id] -= ante_amount
         pot += ante_amount
@@ -257,7 +269,7 @@ class IndianPokerGame:
                     player_id=player_id,
                     order=idx,
                     card=deck.pop(),
-                    stack_size=self.stack_sizes[player_id]
+                    remaining_stack_size=self.stack_sizes[player_id]
                 )
 
         # update first player index for the next round
@@ -284,8 +296,6 @@ class IndianPokerGame:
 
         # Perform betting rounds
         while not round_state.is_round_finished():
-            # logger.debug(round_state)
-
             player_id = next(player_id_cycle)
             logger.debug(f"--- Action on {player_id} ---")
             player_info = round_state.player_information[player_id]
@@ -313,39 +323,39 @@ class IndianPokerGame:
                 player_info.has_folded = True
 
             elif action.action_type == 'call':
-                call_amount = action.amount
-                if call_amount == 0:
+                call_delta = action.delta
+                if call_delta == 0:
                     logger.debug(f"{player_id} folds due to a call amount of 0")
                     invalid_action = True
-                elif call_amount != round_state.get_amount_to_call_for_player(player_id):
+                elif call_delta != round_state.get_delta_to_call_for_player(player_id):
                     logger.debug(f"{player_id} folds due to invalid call amount.")
                     invalid_action = True
-                elif call_amount > self.stack_sizes[player_id]:
+                elif call_delta > self.stack_sizes[player_id]:
                     logger.debug(f"{player_id} folds due to stack size too small.")
                     invalid_action = True
                 else:
-                    self.stack_sizes[player_id] -= call_amount
-                    round_state.pot += call_amount
-                    player_info.current_bet += call_amount
-                    logger.debug(f"{player_id} calls {call_amount}.")
+                    self.stack_sizes[player_id] -= call_delta
+                    round_state.pot += call_delta
+                    logger.debug(f"{player_id} calls {call_delta}.")
 
             elif action.action_type == 'raise':
-                raise_amount = action.amount
-                if raise_amount < round_state.get_minimum_raise_amount_for_player(player_id):
+                call_and_raise_delta = action.delta # this includes the amount needed to call as well
+                if call_and_raise_delta < round_state.get_minimum_call_and_raise_delta_for_player(player_id):
                     logger.debug(f"{player_id} folds due to invalid raise amount.")
                     invalid_action = True
-                elif raise_amount > self.stack_sizes[player_id]:
+                elif call_and_raise_delta > self.stack_sizes[player_id]:
                     logger.debug(f"{player_id} folds due to stack size too small.")
                     invalid_action = True
                 else:
-                    call_amount = round_state.get_amount_to_call_for_player(player_id)
-                    self.stack_sizes[player_id] -= raise_amount
-                    round_state.pot += raise_amount
-                    round_state.current_bet += raise_amount - call_amount
-                    round_state.last_raise_amount = raise_amount - call_amount
-                    player_info.current_bet += raise_amount
-                    # logger.debug(f"{call_amount=} {raise_amount=} {player_info.current_bet=} {round_state.current_bet=} {self.stack_sizes[player_id]}")
-                    logger.debug(f"{player_id} raises {raise_amount - call_amount} to a total bet of {round_state.current_bet}.")
+                    player_current_bet = round_state.get_money_put_in_by_player(player_id)
+                    call_delta = round_state.get_delta_to_call_for_player(player_id) # this is the amount needed to call
+                    raise_delta = call_and_raise_delta - call_delta # this is the amount raised
+
+                    round_state.pot += call_and_raise_delta
+                    round_state.last_raise_delta = raise_delta
+                    round_state.current_bet_total = player_current_bet + call_delta + raise_delta
+
+                    logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
 
             elif action.action_type == 'check':
                 if not round_state.can_check_currently(player_id):
@@ -419,15 +429,16 @@ if __name__ == "__main__":
             if action == 'fold':
                 return Action('fold')
             elif action == 'call':
-                return Action('call', amount=game_state.get_amount_to_call_for_player(self.player_id))
+                return Action('call', delta=game_state.get_delta_to_call_for_player(self.player_id))
             elif action == 'raise':
-                return Action('raise', amount=game_state.get_minimum_raise_amount_for_player(self.player_id))
+                return Action('raise', delta=game_state.get_minimum_call_and_raise_delta_for_player(self.player_id))
             elif action == 'check':
                 return Action('check')
 
     strategies = {
         'Player 1': RandomStrategy('Player 1'),
         'Player 2': RandomStrategy('Player 2'),
+        'Player 3': RandomStrategy('Player 3'),
     }
 
-    simulate_game(strategies, ante=5, starting_stack=100, rounds=20)
+    simulate_game(strategies, ante=5, starting_stack=200, rounds=10)

@@ -312,13 +312,6 @@ class IndianPokerGame:
                 logger.debug(f"{player_id} folds.")
                 player_info.has_folded = True
 
-            elif action.action_type == 'all in':
-                all_in_amount = self.stack_sizes[player_id]
-                self.stack_sizes[player_id] = 0
-                round_state.pot += all_in_amount
-                player_info.current_bet += all_in_amount
-                logger.debug(f"{player_id} goes all in with {all_in_amount}.")
-
             elif action.action_type == 'call':
                 call_amount = action.amount
                 if call_amount == 0:

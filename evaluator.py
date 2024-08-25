@@ -21,11 +21,6 @@ class Evaluator:
         self.request_stop = False
         self.stopped = False
 
-        # remove all files from results folder and make it if needed
-        if not RESULTS_DIR.exists():
-            RESULTS_DIR.mkdir()
-            for file in RESULTS_DIR.iterdir():
-                file.unlink()
 
     def load_strategies(self):
         self.strategies = {}
@@ -49,6 +44,12 @@ class Evaluator:
         self.number_of_games = {
             strategy: 0 for strategy in self.strategies
         }
+
+        # remove all files from results folder and make it if needed
+        if not RESULTS_DIR.exists():
+            RESULTS_DIR.mkdir()
+        for file in RESULTS_DIR.iterdir():
+            file.unlink()
     
     def stop(self):
         self.request_stop = True

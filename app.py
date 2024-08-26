@@ -123,7 +123,7 @@ def example_interesting_game_for_strategies(comma_separated_strategies: str):
         for round, logs in evaluator.last_game[sorted_three_tuple].round_history:
             if not all(action.action_type == "check" for action in round.betting_history):
                 return f"<h1>Round {round_num}</h1><p style='white-space: pre-wrap'>{logs}</p>"
-            rounds += 1
+            round_num += 1
         return "No interesting rounds found"
     else:
         return "No results found"

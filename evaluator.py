@@ -50,11 +50,11 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
 
     def reset(self):
         # used for global score
-        self.relative_win_amount_for_strategy: dict[str, int] = defaultdict(int) # player_id -> number of chips
+        self.pnl_for_strategy: dict[str, int] = defaultdict(int) # player_id -> number of chips
         self.number_of_rounds_for_strategy: dict[str, int] = defaultdict(int) # player_id -> number of games
 
         # used for individual scores
-        self.relative_win_amount_for_three_tuple: dict[ThreeTupleOfStrategies, dict[str, int]] = defaultdict(lambda: defaultdict(int)) # sorted (strategy1, strategy2, strategy3) -> player_id -> number of games
+        self.pnl_for_three_tuple: dict[ThreeTupleOfStrategies, dict[str, int]] = defaultdict(lambda: defaultdict(int)) # sorted (strategy1, strategy2, strategy3) -> player_id -> number of games
         self.number_of_rounds_for_three_tuple: dict[ThreeTupleOfStrategies, dict[str, int]] = defaultdict(lambda: defaultdict(int)) # sorted (strategy1, strategy2, strategy3) -> player_id -> number of games
         self.last_game: dict[ThreeTupleOfStrategies, IndianPokerGame] = {} # sorted (strategy1, strategy2, strategy3) -> Game
 
@@ -129,14 +129,14 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
                     f.write(f"Evaluation: {num_evaluations}\n")
                     for strategy in strategies:
                         num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
-                        relative_win_amount = (game.stack_sizes[strategy] - starting_stack) * 1000 / num_rounds_for_strategy
+                        pnl = (game.stack_sizes[strategy] - starting_stack)
 
                         self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
-                        self.relative_win_amount_for_strategy[strategy] += relative_win_amount
+                        self.pnl_for_strategy[strategy] += pnl
 
                         self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
-                        self.relative_win_amount_for_three_tuple[sorted_strategy_tuple][strategy] += relative_win_amount
-                        f.write(f"{strategy} has pnl of {relative_win_amount} in {num_rounds_for_strategy} rounds. stack_size: {game.stack_sizes[strategy]}")
+                        self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl
+                        f.write(f"{strategy} has pnl of {pnl} in {num_rounds_for_strategy} rounds. stack_size: {game.stack_sizes[strategy]}")
                         if strategy in game.turn_busted:
                             f.write(f"busted in round {game.turn_busted[strategy]} in a game of {len(game.round_history)} rounds")
                         f.write("\n")
@@ -145,7 +145,7 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
                 def write_global_results():
                     avg_pnl_per_1000_rounds = {}
                     for strategy in self.strategies:
-                        avg_pnl_per_1000_rounds[strategy] = (self.relative_win_amount_for_strategy[strategy]) * 1000 / (self.number_of_rounds_for_strategy[strategy] if self.number_of_rounds_for_strategy[strategy] > 0 else 1)
+                        avg_pnl_per_1000_rounds[strategy] = (self.pnl_for_strategy[strategy]) * 1000 / (self.number_of_rounds_for_strategy[strategy] if self.number_of_rounds_for_strategy[strategy] > 0 else 1)
                     self.logger.info(f"Average pnl per 1000 games: {avg_pnl_per_1000_rounds}")
                     with open('results/results.txt', 'a') as f:
                         results_json = {
@@ -160,7 +160,7 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
                     avg_pnl_per_1000_rounds = {}
                     sorted_three_tuple = tuple(sorted(game.strategies.keys()))
                     for strategy in game.strategies.keys():
-                        avg_pnl_per_1000_rounds[strategy] = (self.relative_win_amount_for_three_tuple[sorted_three_tuple][strategy]) * 1000 / (self.number_of_rounds_for_three_tuple[sorted_three_tuple][strategy] if self.number_of_rounds_for_three_tuple[sorted_three_tuple][strategy] > 0 else 1)
+                        avg_pnl_per_1000_rounds[strategy] = (self.pnl_for_three_tuple[sorted_three_tuple][strategy]) * 1000 / (self.number_of_rounds_for_three_tuple[sorted_three_tuple][strategy] if self.number_of_rounds_for_three_tuple[sorted_three_tuple][strategy] > 0 else 1)
                     self.logger.info(f"Average pnl per 1000 games for {sorted_three_tuple}: {avg_pnl_per_1000_rounds}")
                     with open(f'{output_dir}/results.txt', 'a') as f:
                         results_json = {

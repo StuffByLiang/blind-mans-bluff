@@ -1,5 +1,7 @@
 # import all strategies from strategies folder and play mulitple rounds of indian poker
-from indianpoker import Strategy, IndianPokerGame, simulate_game
+from collections import defaultdict
+import threading
+from indianpoker import RoundState, Strategy, IndianPokerGame, simulate_game
 from importlib import reload
 from pathlib import Path
 import os
@@ -12,18 +14,50 @@ import itertools
 
 RESULTS_DIR = Path('results')
 
-class Evaluator:
+class ThreePlayerEvaluator:
+    def load_strategies(self):
+        """
+        Load all strategies from the strategies folder
+        """
+        pass
+
+    def restart(self):
+        """
+        restarts the evaluator, blocks until the evaluator has stopped
+        """
+        pass
+
+    def start_evaluating_strategies(self):
+        """
+        Evaluate the strategies against each other. 
+        """
+        pass
+
+ThreeTupleOfStrategies = tuple[str, str, str]
+
+class ThreePlayerEvaluator(ThreePlayerEvaluator):
     def __init__(self, logger = logging.getLogger(__name__)):
         self.logger = logger
+
         self.strategy_classes: dict[str, Strategy] = {}
         self.strategies: dict[str, Strategy] = {}
-        self.number_of_chips: dict[str, int] = {}
-        self.number_of_games: dict[str, int] = {}
-        self.request_stop = False
-        self.stopped = False
+        
+        self.three_tuple_of_strategies: set[ThreeTupleOfStrategies] = set()
 
-    def get_new_instantiated_strategies(self):
-        return {strategy: self.strategy_classes[strategy]() for strategy in self.strategy_classes}
+        # used for running
+        self.request_stop = False
+        self.main_thread = None
+
+    def reset(self):
+        # used for global score
+        self.relative_win_amount_for_strategy: dict[str, int] = defaultdict(int) # player_id -> number of chips
+        self.number_of_rounds_for_strategy: dict[str, int] = defaultdict(int) # player_id -> number of games
+
+        # used for individual scores
+        self.relative_win_amount_for_three_tuple: dict[ThreeTupleOfStrategies, dict[str, int]] = defaultdict(lambda: defaultdict(int)) # sorted (strategy1, strategy2, strategy3) -> player_id -> number of games
+        self.number_of_rounds_for_three_tuple: dict[ThreeTupleOfStrategies, dict[str, int]] = defaultdict(lambda: defaultdict(int)) # sorted (strategy1, strategy2, strategy3) -> player_id -> number of games
+        self.last_game: dict[ThreeTupleOfStrategies, IndianPokerGame] = {} # sorted (strategy1, strategy2, strategy3) -> Game
+
 
     def load_strategies(self):
         self.strategies = {}
@@ -42,35 +76,40 @@ class Evaluator:
         # pitch the strategies against each other
         self.logger.info(f"Reloaded Strategies: strategies playing: {self.strategies}")
 
-        self.number_of_chips = {
-            strategy: 0 for strategy in self.strategy_classes
-        }
-        self.number_of_games = {
-            strategy: 0 for strategy in self.strategy_classes
-        }
+        for strategies in itertools.combinations(self.strategies, 3):
+            self.three_tuple_of_strategies.add(tuple(sorted(strategies)))
+
+        self.reset()
 
         # remove all files from results folder and make it if needed
         if not RESULTS_DIR.exists():
             RESULTS_DIR.mkdir()
         for file in RESULTS_DIR.iterdir():
-            file.unlink()
+            if file.is_file():
+                file.unlink()
+            else: # remove all directories
+                for f in file.iterdir():
+                    f.unlink()
+                file.rmdir()
 
-    def stop(self):
+    def restart(self):
         self.request_stop = True
-        while not self.stopped:
-            print("waiting for evaluator to stop")
-            pass
+        if self.main_thread is not None:
+            self.main_thread.join()
+        self.request_stop = False
+        self.start_evaluating_strategies()
+    
+    def start_evaluating_strategies(self):
+        self.main_thread = threading.Thread(target=self.run)
+        self.main_thread.start()
 
-    def evaluate_strategies(self):
+    def run(self):
         ante=5
         starting_stack=200
         rounds=1000
 
         last_write_time = datetime.datetime.now()
-
-        last_log_game = 0
-        log_every = 1000
-        last_write_num = 0
+        num_evaluations = 0
 
         self.stopped = True
 
@@ -79,51 +118,78 @@ class Evaluator:
                 continue
             for strategies in itertools.combinations(self.strategies, 3):
                 if self.request_stop:
-                    self.request_stop = False
-                    self.stopped = True
                     return
                 game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds, self.logger)
 
+                sorted_strategy_tuple = tuple(sorted(strategies))
+                self.last_game[sorted_strategy_tuple] = game
+
                 for strategy in strategies:
-                    num_games_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.historical_stack_sizes )
-                    self.number_of_games[strategy] += num_games_for_strategy
-                    self.number_of_chips[strategy] += game.stack_sizes[strategy] - starting_stack
+                    num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.historical_stack_sizes )
+                    relative_win_amount = (game.stack_sizes[strategy] - starting_stack) * 1000 / num_rounds_for_strategy
 
-            avg_win_rate = {}
-            for strategy in self.strategies:
-                avg_win_rate[strategy] = (self.number_of_chips[strategy]) * 1000 / (self.number_of_games[strategy] if self.number_of_games[strategy] > 0 else 1)
+                    self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
+                    self.relative_win_amount_for_strategy[strategy] += relative_win_amount
 
-            # num games is same for each strategy so can just take the first one
-            number_of_games = list(self.number_of_games.values())[0]
-
-            if number_of_games > last_log_game + log_every:
-                last_log_game += log_every
-                self.logger.info(f"Average Win Rate: {avg_win_rate}")
+                    self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
+                    self.relative_win_amount_for_three_tuple[sorted_strategy_tuple][strategy] += relative_win_amount
 
             if datetime.datetime.now() - last_write_time > datetime.timedelta(seconds=1):
-                with open('results/results.txt', 'a') as f:
-                    results_json = {
-                        "number_of_games": number_of_games,
-                        "strategy_win_rate": avg_win_rate,
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }
-                    f.write(str(results_json)+"\n")
-                num_rounds_used = len( game.historical_stack_sizes )
-                size_by_player = {}
-                for s in game.historical_stack_sizes:
-                    for k,v in s.items():
-                        if k not in size_by_player:
-                            size_by_player[k] = []
-                        size_by_player[k].append(v)
-                for k,v in size_by_player.items():
-                    plt.plot( list(range(num_rounds_used)), v, label=k )
-                plt.legend()
-                plt.savefig(f'results/results{last_write_num % 10}.png')
-                plt.clf()
-                last_write_num += 1
+                def write_global_results():
+                    avg_pnl_per_1000_rounds = {}
+                    for strategy in self.strategies:
+                        avg_pnl_per_1000_rounds[strategy] = (self.relative_win_amount_for_strategy[strategy]) * 1000 / (self.number_of_rounds_for_strategy[strategy] if self.number_of_rounds_for_strategy[strategy] > 0 else 1)
+                    self.logger.info(f"Average pnl per 1000 games: {avg_pnl_per_1000_rounds}")
+                    with open('results/results.txt', 'a') as f:
+                        results_json = {
+                            "num_evaluations": num_evaluations,
+                            "strategy_win_rate": avg_pnl_per_1000_rounds,
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                        f.write(str(results_json)+"\n")
+                write_global_results()
+
+                def write_results_for_game(output_dir: Path, game: IndianPokerGame):
+                    avg_pnl_per_1000_rounds = {}
+                    sorted_three_tuple = tuple(sorted(game.strategies.keys()))
+                    for strategy in game.strategies.keys():
+                        avg_pnl_per_1000_rounds[strategy] = (self.relative_win_amount_for_three_tuple[sorted_three_tuple][strategy]) * 1000 / (self.number_of_rounds_for_three_tuple[sorted_three_tuple][strategy] if self.number_of_rounds_for_three_tuple[sorted_three_tuple][strategy] > 0 else 1)
+                    self.logger.info(f"Average pnl per 1000 games for {sorted_three_tuple}: {avg_pnl_per_1000_rounds}")
+                    with open(f'{output_dir}/results.txt', 'a') as f:
+                        results_json = {
+                            "num_evaluations": num_evaluations,
+                            "strategy_win_rate": avg_pnl_per_1000_rounds,
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                        f.write(str(results_json)+"\n")
+                
+                def generate_picture_for_game(output_dir: Path, game: IndianPokerGame):
+                    num_rounds_used = len( game.historical_stack_sizes )
+                    size_by_player = {}
+                    for s in game.historical_stack_sizes:
+                        for k,v in s.items():
+                            if k not in size_by_player:
+                                size_by_player[k] = []
+                            size_by_player[k].append(v)
+                    for k,v in size_by_player.items():
+                        plt.plot( list(range(num_rounds_used)), v, label=k )
+                    plt.legend()
+                    plt.savefig(f'{output_dir}/results{num_evaluations % 10}.png')
+                    plt.clf()
+                
+                for strategies, game in self.last_game.items():
+                    # make the directory if needed
+                    formatted_sorted_strategy_tuple = ",".join(strategies)
+                    output_dir = RESULTS_DIR / formatted_sorted_strategy_tuple
+                    if not output_dir.exists():
+                        output_dir.mkdir()
+                    generate_picture_for_game(output_dir, game)
+                    write_results_for_game(output_dir, game)
+
+                num_evaluations += 1
                 last_write_time = datetime.datetime.now()
 
 if __name__ == "__main__":
-    evaluator = Evaluator()
+    evaluator = ThreePlayerEvaluator()
     evaluator.load_strategies()
-    strategies = evaluator.evaluate_strategies()
+    strategies = evaluator.start_evaluating_strategies()

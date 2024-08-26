@@ -1,10 +1,10 @@
 import logging
+from pathlib import Path
 from flask import Flask, request, send_from_directory
-from evaluator import Evaluator
+from evaluator import ThreePlayerEvaluator
 from threading import Thread
-from indianpoker import simulate_game, get_example_rounds
-from io import StringIO
 import os
+import random
 
 app = Flask(__name__)
 
@@ -33,11 +33,9 @@ else:
 logger.addHandler(handler)
 logger.propagate = False
 
-evaluator = Evaluator(logger)
-def run_evaluator():
-    evaluator.load_strategies()
-    evaluator.evaluate_strategies()
-Thread(target=run_evaluator).start()
+evaluator = ThreePlayerEvaluator(logger)
+evaluator.load_strategies()
+evaluator.start_evaluating_strategies()
 
 ########## Helpers ##########
 
@@ -52,9 +50,8 @@ def hello_world():
     return f"""
     <h1>Indian Poker Strategy Evaluator</h1>
     <p>Upload your strategies to see how they perform against each other</p>
-    <a href="/results">View Results</a> <br />
-    <a href="/examplegame">View Example Game</a> <br />
-    <a href="/exampleinterestinggame">View Example Interesting Game</a> <br />
+    <a href="/results">View Global Results</a> <br />
+    <a href="/exampleinterestinggame">View Example Interesting Games</a> <br />
     <a href="/upload">Upload New Strategy</a> <br />
     Current strategies: {list(strategies.keys())}
     """
@@ -69,16 +66,37 @@ def results():
             results = "<h1>Results</h1>"
             for line in lines:
                 results += f"<p>{line}</p>"
-
-            # now get all pngs in results folder and display them
-            images = ""
-            for file in os.listdir('results'):
-                if file.endswith('.png'):
-                    images += f'<img src="results/{file}" width="500" />'
+            
+            for strategies in evaluator.three_tuple_of_strategies:
+                results += f'<a href="/results/{",".join(strategies)}">Results for {", ".join(strategies)}</a><br />'
                 
-            return results + images
+            return results
     except FileNotFoundError:
         return "No results yet"
+
+@app.route("/results/<comma_separated_strategies>")
+def results_per_comma_separated_strategy(comma_separated_strategies: str):
+    sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
+    folder_name = ",".join(sorted_three_tuple)
+    folder_path = Path(f"results/{folder_name}")
+    # now get all pngs in results folder and display them
+    images = ""
+    try:
+        with open(folder_path / 'results.txt', 'r') as f:
+            # read the last 3 lines
+            lines = f.readlines()[-3:]
+
+            results = f"<h1>Results for {sorted_three_tuple}</h1>"
+            for line in lines:
+                results += f"<p>{line}</p>"
+
+            for file in folder_path.glob('*.png'):
+                images += f'<img src="/resultspublic/{comma_separated_strategies}/{file.name}" alt="{file.name}" width="500">'
+            
+            results += images
+            return results
+    except FileNotFoundError:
+        return f"No results yet for {sorted_three_tuple}"
 
 @app.route("/getstate/<strategy>")
 def get_state(strategy):
@@ -87,61 +105,31 @@ def get_state(strategy):
         return "Strategy not found"
     return strategy.print_state()
 
-@app.route("/examplegame")
-def example_game():
-    logger = logging.getLogger("ExampleGame")
-    logger.setLevel(logging.DEBUG)
-
-    # get print of logger to a string
-    log_stream = StringIO()
-    handler = logging.StreamHandler(log_stream)
-    handler.setFormatter(logging.Formatter('%(message)s'))
-    handler.setLevel(logging.DEBUG)
-
-    logger.addHandler(handler)
-    logger.propagate = False
-
-    strategies = evaluator.get_new_instantiated_strategies()
-    simulate_game(strategies, 5, 200, 1, logger)
-
-    logger.removeHandler(handler)
-    handler.close()
-
-    # now grab logs from the logger
-    logs = log_stream.getvalue()
-    logs = "<br />".join(logs.split('\n'))
-    return logs
-
 @app.route("/exampleinterestinggame")
 def example_interesting_game():
-    logger = logging.getLogger("Example Interesting Game")
-    logger.setLevel(logging.DEBUG)
-    log_stream = StringIO()
-    handler = logging.StreamHandler(log_stream)
-    handler.setFormatter(logging.Formatter('%(message)s'))
-    handler.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-    logger.propagate = False
-    while True:
-        strategies = evaluator.get_new_instantiated_strategies()
-        rounds = get_example_rounds(strategies, 5, 200, 1, logger)
+    results = "<h1>Find Example Interesting Games</h1>"
+    for strategies in evaluator.three_tuple_of_strategies:
+        results += f'<a href="/exampleinterestinggame/{",".join(strategies)}">Example Interesting Game for {", ".join(strategies)}</a><br />'
 
-        if all(action.action_type == "check" for action in rounds[0].betting_history):
-            log_stream.truncate(0)
-            continue
+    return results
+    
+    
+@app.route("/exampleinterestinggame/<comma_separated_strategies>")
+def example_interesting_game_for_strategies(comma_separated_strategies: str):
+    sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
 
-        break
-
-    logger.removeHandler(handler)
-    handler.close()
-
-    # now grab logs from the logger
-    logs = log_stream.getvalue()
-    logs = "<br />".join(logs.split('\n'))
-    return logs
+    if sorted_three_tuple in evaluator.last_game:
+        round_num = 0
+        for round, logs in evaluator.last_game[sorted_three_tuple].round_history:
+            if not all(action.action_type == "check" for action in round.betting_history):
+                return f"<h1>Round {round_num}</h1><p style='white-space: pre-wrap'>{logs}</p>"
+            rounds += 1
+        return "No interesting rounds found"
+    else:
+        return "No results found"
     
 # add results as a public folder
-@app.route('/results/<path:path>')
+@app.route('/resultspublic/<path:path>')
 def send_results(path):
     return send_from_directory('results', path)
 
@@ -163,9 +151,7 @@ def upload_file():
         if file and allowed_file(file.filename):
             filename = file.filename
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            evaluator.stop()
-            evaluator.load_strategies()
-            evaluator.evaluate_strategies()
+            evaluator.restart()
             error_msg = 'File successfully uploaded'
     
     return f'''

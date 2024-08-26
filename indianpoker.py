@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
+from io import StringIO
 from itertools import cycle
 import random
 import logging
@@ -211,6 +212,7 @@ class IndianPokerGame:
 
         self.stack_sizes = {strategy.player_id: starting_stack for strategy in strategies.values()}
         self.historical_stack_sizes = [ deepcopy( self.stack_sizes ) ]
+        self.round_history: list[tuple[RoundState, str]] = [] # (final round_state, logs)
         self.turn_busted = {}
         self.non_busted_player_id_order = [strategy.player_id for strategy in strategies.values()]
         self.first_player_idx = 0
@@ -270,6 +272,21 @@ class IndianPokerGame:
         self.first_player_idx = (self.first_player_idx + 1) % num_players
 
         return RoundState(pot=pot, player_information=player_information)
+    
+    def setup_round_logger(self) -> tuple[StringIO, logging.Handler]:
+        log_stream = StringIO()
+        handler = logging.StreamHandler(log_stream)
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        handler.setLevel(logging.DEBUG)
+
+        self.logger.addHandler(handler)
+        self.logger.propagate = False
+
+        return log_stream, handler
+    
+    def cleanup_round_logger(self, handler: logging.Handler):
+        self.logger.removeHandler(handler)
+        handler.close()
 
     def play_round(self) -> RoundState:
         """
@@ -280,6 +297,8 @@ class IndianPokerGame:
         - all players have called the current raiser
         - all players have checked
         """
+        log_stream, stream_handler = self.setup_round_logger()
+
         # Initial round setup
         round_state = self.get_initial_round_state()
         player_id_cycle = cycle(round_state.player_information.keys())
@@ -421,6 +440,8 @@ class IndianPokerGame:
             except Exception as e:
                 self.logger.exception(f"Error calling reveal_round for {strategy.player_id}")
         
+        self.round_history.append( (round_state, log_stream.getvalue()) )
+        self.cleanup_round_logger(stream_handler)
         return round_state
 
     def has_at_least_2_players_left(self):
@@ -436,19 +457,6 @@ def simulate_game(strategies: dict[str, Strategy], ante: int, starting_stack: in
             break
     logger.debug(f"\nFinal Stack Sizes: {game.stack_sizes}")
     return game
-
-def get_example_rounds(strategies: dict[str, Strategy], ante: int, starting_stack: int, rounds: int, logger = logging.getLogger(__name__)) -> list[RoundState]:
-    game = IndianPokerGame(strategies, ante, starting_stack, logger=logger)
-    round_states = []
-    for round_number in range(1, rounds + 1):
-        logger.debug(f"\n--- Round {round_number} ---")
-        round_state = game.play_round()
-        round_states.append(round_state)
-        if not game.has_at_least_2_players_left():
-            logger.debug("Game over! Less than 2 players remaining.")
-            break
-    logger.debug(f"\nFinal Stack Sizes: {game.stack_sizes}")
-    return round_states
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(message)s')

@@ -21,7 +21,7 @@ class Evaluator:
         self.number_of_games: dict[str, int] = {}
         self.request_stop = False
         self.stopped = False
-    
+
     def get_new_instantiated_strategies(self):
         return {strategy: self.strategy_classes[strategy]() for strategy in self.strategy_classes}
 
@@ -38,7 +38,7 @@ class Evaluator:
                     self.logger.info(f"Loaded strategy {strategy_class.player_id} from file {file})")
                 except Exception as e:
                     self.logger.exception(f"Error loading strategy from file {file}")
-        
+
         # pitch the strategies against each other
         self.logger.info(f"Reloaded Strategies: strategies playing: {self.strategies}")
 
@@ -54,7 +54,7 @@ class Evaluator:
             RESULTS_DIR.mkdir()
         for file in RESULTS_DIR.iterdir():
             file.unlink()
-    
+
     def stop(self):
         self.request_stop = True
         while not self.stopped:
@@ -91,7 +91,7 @@ class Evaluator:
 
             avg_win_rate = {}
             for strategy in self.strategies:
-                avg_win_rate[strategy] = (self.number_of_chips[strategy]) * 1000 / (self.number_of_games[strategy] if self.number_of_games[strategy] > 0 else 0)
+                avg_win_rate[strategy] = (self.number_of_chips[strategy]) * 1000 / (self.number_of_games[strategy] if self.number_of_games[strategy] > 0 else 1)
 
             # num games is same for each strategy so can just take the first one
             number_of_games = list(self.number_of_games.values())[0]

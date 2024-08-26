@@ -97,6 +97,7 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
         if self.main_thread is not None:
             self.main_thread.join()
         self.request_stop = False
+        self.load_strategies()
         self.start_evaluating_strategies()
     
     def start_evaluating_strategies(self):

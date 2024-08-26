@@ -125,21 +125,15 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
                 sorted_strategy_tuple = tuple(sorted(strategies))
                 self.last_game[sorted_strategy_tuple] = game
 
-                with open('results/debug.txt', 'a') as f:
-                    f.write(f"Evaluation: {num_evaluations}\n")
-                    for strategy in strategies:
-                        num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
-                        pnl = (game.stack_sizes[strategy] - starting_stack)
+                for strategy in strategies:
+                    num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
+                    pnl = (game.stack_sizes[strategy] - starting_stack)
 
-                        self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
-                        self.pnl_for_strategy[strategy] += pnl
+                    self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
+                    self.pnl_for_strategy[strategy] += pnl
 
-                        self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
-                        self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl
-                        f.write(f"{strategy} has pnl of {pnl} in {num_rounds_for_strategy} rounds. stack_size: {game.stack_sizes[strategy]}")
-                        if strategy in game.turn_busted:
-                            f.write(f"busted in round {game.turn_busted[strategy]} in a game of {len(game.round_history)} rounds")
-                        f.write("\n")
+                    self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
+                    self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl
 
             if datetime.datetime.now() - last_write_time > datetime.timedelta(seconds=1):
                 def write_global_results():

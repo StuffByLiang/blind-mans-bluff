@@ -119,12 +119,22 @@ def example_interesting_game_for_strategies(comma_separated_strategies: str):
     sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
 
     if sorted_three_tuple in evaluator.last_game:
-        round_num = 0
-        for round, logs in evaluator.last_game[sorted_three_tuple].round_history:
+        interesting_round_logs: list[tuple[int, str]] = [] # [(round_num, log)]
+        for round_num, round_history in enumerate(evaluator.last_game[sorted_three_tuple].round_history):
+            round, log = round_history 
             if not all(action.action_type == "check" for action in round.betting_history):
-                return f"<h1>Round {round_num}</h1><p style='white-space: pre-wrap'>{logs}</p>"
-            round_num += 1
-        return "No interesting rounds found"
+                interesting_round_logs.append((round_num, log))
+            
+        if len(interesting_round_logs) == 0:
+            return "No interesting rounds found"
+        # now sample 10 random interesting_round logs but make sure to keep them in order
+        sample_size = 10
+        random.shuffle(interesting_round_logs)
+        interesting_round_logs = sorted(interesting_round_logs, key=lambda x: x[0])
+        html = ""
+        for round_num, logs in interesting_round_logs[:sample_size]:
+            html += f"<b>Round {round_num}</b><p style='white-space: pre-wrap'>{logs}</p>"
+        return html
     else:
         return "No results found"
     

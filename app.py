@@ -130,9 +130,9 @@ def example_interesting_game_for_strategies(comma_separated_strategies: str):
         # now sample 10 random interesting_round logs but make sure to keep them in order
         sample_size = 10
         random.shuffle(interesting_round_logs)
-        interesting_round_logs = sorted(interesting_round_logs, key=lambda x: x[0])
+        interesting_round_logs = sorted(interesting_round_logs[:sample_size], key=lambda x: x[0])
         html = ""
-        for round_num, logs in interesting_round_logs[:sample_size]:
+        for round_num, logs in interesting_round_logs:
             html += f"<b>Round {round_num}</b><p style='white-space: pre-wrap'>{logs}</p>"
         return html
     else:

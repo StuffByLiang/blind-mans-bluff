@@ -277,7 +277,7 @@ class IndianPokerGame:
         log_stream = StringIO()
         handler = logging.StreamHandler(log_stream)
         handler.setFormatter(logging.Formatter('%(message)s'))
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(logging.INFO)
 
         self.logger.addHandler(handler)
         self.logger.propagate = False
@@ -305,7 +305,7 @@ class IndianPokerGame:
         num_players = len( round_state.player_information )
         # debug log each player's card
         for player_info in round_state.player_information.values():
-            self.logger.debug(f"{player_info.player_id} received card: {player_info.card}")
+            self.logger.info(f"{player_info.player_id} received card: {player_info.card}")
 
         # Perform betting rounds
         last_bet = False
@@ -322,10 +322,10 @@ class IndianPokerGame:
                     break
                 # Get decision from the player's strategy
                 while (player_info := round_state.player_information[player_id]).has_folded:
-                    self.logger.debug(f"skipping {player_id} because they have has folded")
+                    self.logger.info(f"skipping {player_id} because they have has folded")
                     player_id = next( player_id_cycle )
                     
-                self.logger.debug(f"--- Action on {player_id} ---")
+                self.logger.info(f"--- Action on {player_id} ---")
                 action = None
                 try:
                     strategy = self.strategies[player_id]
@@ -338,32 +338,32 @@ class IndianPokerGame:
                 # Process action
                 invalid_action = False
                 if action.action_type == 'fold':
-                    self.logger.debug(f"{player_id} folds.")
+                    self.logger.info(f"{player_id} folds.")
                     player_info.has_folded = True
 
                 elif action.action_type == 'call':
                     call_delta = action.delta
                     if call_delta == 0:
-                        self.logger.debug(f"{player_id} folds due to a call amount of 0")
+                        self.logger.info(f"{player_id} folds due to a call amount of 0")
                         invalid_action = True
                     elif call_delta != round_state.get_delta_to_call_for_player(player_id):
-                        self.logger.debug(f"{player_id} folds due to invalid call amount.")
+                        self.logger.info(f"{player_id} folds due to invalid call amount.")
                         invalid_action = True
                     elif call_delta > round_state.player_information[player_id].remaining_stack_size:
-                        self.logger.debug(f"{player_id} folds due to stack size too small.")
+                        self.logger.info(f"{player_id} folds due to stack size too small.")
                         invalid_action = True
                     else:
                         round_state.player_information[player_id].remaining_stack_size -= call_delta
                         round_state.pot += call_delta
-                        self.logger.debug(f"{player_id} calls {call_delta}.")
+                        self.logger.info(f"{player_id} calls {call_delta}.")
 
                 elif action.action_type == 'raise':
                     call_and_raise_delta = action.delta # this includes the amount needed to call as well
                     if call_and_raise_delta < round_state.get_minimum_raise_delta_for_player(player_id):
-                        self.logger.debug(f"{player_id} folds due to invalid raise amount.")
+                        self.logger.info(f"{player_id} folds due to invalid raise amount.")
                         invalid_action = True
                     elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
-                        self.logger.debug(f"{player_id} folds due to stack size too small.")
+                        self.logger.info(f"{player_id} folds due to stack size too small.")
                         invalid_action = True
                     else:
                         player_current_bet = round_state.get_money_put_in_by_player(player_id)
@@ -375,17 +375,17 @@ class IndianPokerGame:
                         round_state.current_bet_total = player_current_bet + call_delta + raise_delta
                         round_state.player_information[player_id].remaining_stack_size -= call_and_raise_delta
 
-                        self.logger.debug(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
+                        self.logger.info(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
 
                 elif action.action_type == 'check':
                     if not round_state.can_check_currently(player_id):
-                        self.logger.debug(f"{player_id} folds due to invalid check.")
+                        self.logger.info(f"{player_id} folds due to invalid check.")
                         invalid_action = True
                     else:
-                        self.logger.debug(f"{player_id} checks.")
+                        self.logger.info(f"{player_id} checks.")
 
                 else:
-                    self.logger.debug(f"{player_id} folds due to invalid action type.")
+                    self.logger.info(f"{player_id} folds due to invalid action type.")
                     invalid_action = True
 
                 player_id = next( player_id_cycle )
@@ -411,11 +411,11 @@ class IndianPokerGame:
         winner = None
         if len(remaining_players) == 1:
             winner = remaining_players[0]
-            self.logger.debug(f"{winner} wins the pot of {round_state.pot} by default.")
+            self.logger.info(f"{winner} wins the pot of {round_state.pot} by default.")
         else:
             # Compare cards to find the winner
             winner = max(remaining_players, key=lambda pid: round_state.player_information[pid].card)
-            self.logger.debug(f"{winner} wins the pot of {round_state.pot} with a higher card.")
+            self.logger.info(f"{winner} wins the pot of {round_state.pot} with a higher card.")
 
         # Update stack_sizes of each player
         for pid in round_state.player_information:
@@ -423,7 +423,7 @@ class IndianPokerGame:
                 self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size + round_state.pot
             else:
                 self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size
-        self.logger.debug(f"Stack Sizes: {self.stack_sizes}")
+        self.logger.info(f"Stack Sizes: {self.stack_sizes}")
         self.historical_stack_sizes.append( deepcopy( self.stack_sizes ) )
 
         # update busted players

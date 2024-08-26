@@ -132,7 +132,7 @@ class RoundState:
         This needs to be in addition to the delta the player needs to call.
         """
         call_delta = self.get_delta_to_call_for_player(player_id)
-        raise_delta = max(min(self.last_raise_delta + call_delta, self.player_information[player_id].remaining_stack_size), 1)
+        raise_delta = max(self.last_raise_delta + call_delta, 1)
         return raise_delta
     
     def get_winning_player_id(self) -> str:

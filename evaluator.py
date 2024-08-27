@@ -120,7 +120,7 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
             for strategies in itertools.combinations(self.strategies, 3):
                 if self.request_stop:
                     return
-                game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds, self.logger)
+                game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
 
                 sorted_strategy_tuple = tuple(sorted(strategies))
                 self.last_game[sorted_strategy_tuple] = game

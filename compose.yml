@@ -1,0 +1,7 @@
+services:
+  flask:
+    build: .
+    ports:
+      - "${PORT:-5000}:${PORT:-5000}"
+    environment:
+     - PORT=${PORT:-5000}

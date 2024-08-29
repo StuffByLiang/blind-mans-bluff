@@ -48,7 +48,8 @@ def allowed_file(filename):
 def hello_world():
     strategies = evaluator.strategies
     return f"""
-    <h1>Indian Poker Strategy Evaluator</h1>
+    <h1>Indian Poker Strategy Evaluator - {os.getenv("APP_TITLE") or ":D"}</h1>
+    <p>{os.getenv("APP_DESCRIPTION") or "Made with love by Liang, Jeffrey, Matt"}</p>
     <p>Upload your strategies to see how they perform against each other</p>
     <a href="/results">View Global Results</a> <br />
     <a href="/exampleinterestinggame">View Example Interesting Games</a> <br />

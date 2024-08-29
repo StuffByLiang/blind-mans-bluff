@@ -116,6 +116,8 @@ class ThreePlayerEvaluator(ThreePlayerEvaluator):
 
         while True:
             if len(self.strategies) < 3:
+                if self.request_stop:
+                    return
                 continue
             for strategies in itertools.combinations(self.strategies, 3):
                 if self.request_stop:

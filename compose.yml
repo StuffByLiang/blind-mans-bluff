@@ -4,6 +4,6 @@ services:
     ports:
       - "${PORT:-5000}:${PORT:-5000}"
     environment:
-     - PORT=${PORT:-5000}
-     - APP_TITLE=$APP_TITLE
-     - APP_DESCRIPTION=$APP_DESCRIPTION
+      - PORT=${PORT:-5000}
+      - APP_TITLE=$APP_TITLE
+      - APP_DESCRIPTION=$APP_DESCRIPTION

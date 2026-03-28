@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from flask import Flask, request, send_from_directory, render_template, redirect, url_for
+from flask import Flask, request, send_from_directory, render_template, redirect, url_for, jsonify
 from evaluator import ThreePlayerEvaluator
 import os
 import random
@@ -147,6 +147,10 @@ def get_state(strategy_id):
     strategy = evaluator.strategies.get(strategy_id)
     if strategy is None:
         return render_template("state.html", strategy_id=strategy_id, state="Strategy not found", **common_context())
+    if strategy.state_password is not None:
+        pw = request.args.get("password", "")
+        if pw != strategy.state_password:
+            return render_template("state.html", strategy_id=strategy_id, state="Password required. Add ?password=... to URL", **common_context())
     return render_template("state.html", strategy_id=strategy_id, state=strategy.print_state(), **common_context())
 
 @app.route("/interesting")
@@ -211,6 +215,97 @@ def upload_file():
                     message, message_type = 'Strategy uploaded successfully', 'success'
 
     return render_template("upload.html", message=message, message_type=message_type, **common_context())
+
+########## JSON API ##########
+
+@app.route("/api/state/<strategy_id>")
+def api_state(strategy_id):
+    strategy = evaluator.strategies.get(strategy_id)
+    if strategy is None:
+        return jsonify({"error": f"Strategy {strategy_id} not found"}), 404
+    if strategy.state_password is not None:
+        pw = request.args.get("password", "")
+        if pw != strategy.state_password:
+            return jsonify({"error": "Password required", "hint": "Add ?password=..."}), 403
+    return jsonify({"strategy_id": strategy_id, "state": strategy.print_state()})
+
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    if not allowed_file(file.filename):
+        return jsonify({"error": "Only .py files allowed"}), 400
+    filename = file.filename
+    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    evaluator.restart()
+    if evaluator.load_errors:
+        return jsonify({"status": "error", "errors": evaluator.load_errors}), 400
+    return jsonify({"status": "ok", "message": f"Uploaded {filename}, evaluator restarted"})
+
+@app.route("/api/results")
+def api_results():
+    global_pnl = evaluator.get_global_pnl()
+    return jsonify({
+        "global_pnl": global_pnl,
+        "rounds": dict(evaluator.number_of_rounds_for_strategy),
+        "num_evaluations": evaluator.num_evaluations,
+    })
+
+@app.route("/api/interesting/<comma_separated_strategies>")
+def api_interesting(comma_separated_strategies: str):
+    sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
+    rounds_list = []
+    if sorted_three_tuple in evaluator.last_game:
+        for round_num, round_history in enumerate(evaluator.last_game[sorted_three_tuple].round_history):
+            round_state, log = round_history
+            if not all(action.action_type == "check" for action in round_state.betting_history):
+                actions = []
+                for a in round_state.betting_history:
+                    actions.append({
+                        "player": a.player_id,
+                        "type": a.action_type,
+                        "delta": a.delta,
+                    })
+                cards = {}
+                for p in round_state.player_information.values():
+                    cards[p.player_id] = p.card
+                rounds_list.append({
+                    "round": round_num,
+                    "cards": cards,
+                    "actions": actions,
+                    "pot": round_state.pot,
+                    "log": log,
+                })
+    return jsonify({"matchup": list(sorted_three_tuple), "interesting_rounds": rounds_list})
+
+@app.route("/api/interesting_all/<comma_separated_strategies>")
+def api_interesting_all(comma_separated_strategies: str):
+    """Return ALL round data (not just interesting) from last game for deep analysis."""
+    sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
+    rounds_list = []
+    if sorted_three_tuple in evaluator.last_game:
+        for round_num, round_history in enumerate(evaluator.last_game[sorted_three_tuple].round_history):
+            round_state, log = round_history
+            actions = []
+            for a in round_state.betting_history:
+                actions.append({
+                    "player": a.player_id,
+                    "type": a.action_type,
+                    "delta": a.delta,
+                })
+            cards = {}
+            for p in round_state.player_information.values():
+                cards[p.player_id] = p.card
+            rounds_list.append({
+                "round": round_num,
+                "cards": cards,
+                "actions": actions,
+                "pot": round_state.pot,
+            })
+    return jsonify({"matchup": list(sorted_three_tuple), "total_rounds": len(rounds_list), "rounds": rounds_list})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)

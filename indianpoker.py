@@ -275,6 +275,7 @@ class Strategy:
     You may also assume that make_decision will be called sequentially as the game progresses
     """
     player_id = "" # The player ID for the strategy. You must override this.
+    state_password = None  # Set to a string to require password for /getstate
 
     def make_decision(self, state: RoundState) -> Action:
         """

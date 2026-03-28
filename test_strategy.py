@@ -13,10 +13,8 @@ from collections import defaultdict
 from indianpoker import simulate_game
 
 OPPONENT_MODULES = [
-    "strategies.AlphaShitter",
-    "strategies.Chirpy2",
     "strategies.Chirpy3",
-    "strategies.Opener",
+    "my_strategies.ChirpyClaude",
 ]
 
 def load_strategy(module_path: str):

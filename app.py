@@ -8,7 +8,8 @@ import random
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 app = Flask(__name__)
 
@@ -353,9 +354,6 @@ def api_heatmap(strategy_id):
     if not hasattr(strategy, 'card_matchup_pnl'):
         return jsonify({"error": "No card matchup data"}), 404
 
-    # Close any leaked matplotlib state
-    plt.close('all')
-
     # Build 52x52 matrix
     grid = np.full((52, 52), np.nan)
     n_filled = 0
@@ -364,13 +362,14 @@ def api_heatmap(strategy_id):
             grid[mc][oc] = total / count
             n_filled += 1
 
-    fig = plt.figure(figsize=(14, 12))
+    # Use OO API only — never touch plt — to avoid race with evaluator's plotting thread
+    fig = Figure(figsize=(14, 12))
+    canvas = FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)
 
     if n_filled == 0:
         ax.text(0.5, 0.5, 'No data yet', transform=ax.transAxes, ha='center', va='center', fontsize=20)
     else:
-        # Fill NaN with 0 for display, use gray for missing
         display_grid = np.where(np.isnan(grid), 0, grid)
         mask = np.isnan(grid)
         vmax = min(float(np.nanmax(np.abs(grid[~np.isnan(grid)]))), 8)
@@ -380,12 +379,11 @@ def api_heatmap(strategy_id):
                         aspect='equal', interpolation='nearest', origin='upper')
         # Gray out cells with no data
         overlay = np.zeros((*grid.shape, 4))
-        overlay[mask] = [0.2, 0.2, 0.2, 1.0]  # dark gray for missing
+        overlay[mask] = [0.2, 0.2, 0.2, 1.0]
         ax.imshow(overlay, aspect='equal', interpolation='nearest', origin='upper')
 
         fig.colorbar(im, ax=ax, label='Avg PnL per round', shrink=0.8)
 
-    # Rank labels on every 4th card
     rank_labels = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
     tick_pos = [i * 4 + 1.5 for i in range(13)]
     ax.set_xticks(tick_pos)
@@ -393,7 +391,6 @@ def api_heatmap(strategy_id):
     ax.set_yticks(tick_pos)
     ax.set_yticklabels(rank_labels, fontsize=9)
 
-    # Grid lines between ranks
     for i in range(1, 13):
         ax.axhline(i * 4 - 0.5, color='white', linewidth=0.5, alpha=0.7)
         ax.axvline(i * 4 - 0.5, color='white', linewidth=0.5, alpha=0.7)
@@ -404,8 +401,7 @@ def api_heatmap(strategy_id):
 
     fig.tight_layout()
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-    plt.close(fig)
+    canvas.print_png(buf)
     buf.seek(0)
     return Response(buf.getvalue(), mimetype='image/png')
 

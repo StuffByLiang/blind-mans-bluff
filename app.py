@@ -251,6 +251,20 @@ def api_state(strategy_id):
             return jsonify({"error": "Password required", "hint": "Add ?password=..."}), 403
     return jsonify({"strategy_id": strategy_id, "state": strategy.print_state()})
 
+@app.route("/api/state_json/<strategy_id>")
+def api_state_json(strategy_id):
+    """Return full strategy state as structured JSON for programmatic analysis."""
+    strategy = evaluator.strategies.get(strategy_id)
+    if strategy is None:
+        return jsonify({"error": f"Strategy {strategy_id} not found"}), 404
+    if strategy.state_password is not None:
+        pw = request.args.get("password", "")
+        if pw != strategy.state_password:
+            return jsonify({"error": "Password required"}), 403
+    if not hasattr(strategy, 'get_state_json'):
+        return jsonify({"error": "Strategy does not support JSON state"}), 400
+    return jsonify({"strategy_id": strategy_id, "data": strategy.get_state_json()})
+
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     if 'file' not in request.files:

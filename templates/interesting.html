@@ -4,13 +4,25 @@
 <h1>Interesting Games</h1>
 <p style="margin-bottom:1rem; color:#666;">Rounds where players did more than just check.</p>
 
-{% if matchups %}
-{% for matchup in matchups %}
+{% if matchups_3p %}
+<h2>3-Player Matchups</h2>
+{% for matchup in matchups_3p %}
 <div class="card">
     <a href="/interesting/{{ matchup.key }}">{{ matchup.names }}</a>
 </div>
 {% endfor %}
-{% else %}
+{% endif %}
+
+{% if matchups_1v1 %}
+<h2>1v1 Matchups</h2>
+{% for matchup in matchups_1v1 %}
+<div class="card">
+    <a href="/interesting/{{ matchup.key }}">{{ matchup.names }}</a>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if not matchups_3p and not matchups_1v1 %}
 <div class="alert alert-info">No matchups available yet.</div>
 {% endif %}
 {% endblock %}

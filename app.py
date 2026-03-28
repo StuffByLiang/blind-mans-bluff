@@ -59,7 +59,7 @@ def index():
     sorted_pnl = sorted(global_pnl.items(), key=lambda x: x[1], reverse=True)
     return render_template("index.html",
         strategies=evaluator.strategies,
-        num_matchups=len(evaluator.three_tuple_of_strategies),
+        num_matchups=len(evaluator.three_tuple_of_strategies) + len(evaluator.two_tuple_of_strategies),
         global_results=sorted_pnl if sorted_pnl else None,
         **common_context(),
     )
@@ -102,10 +102,19 @@ def results():
         key=lambda x: x[1], reverse=True
     )
 
-    matchups = []
+    matchups_3p = []
     for strategies in evaluator.three_tuple_of_strategies:
         matchup_pnl = evaluator.get_matchup_pnl(strategies)
-        matchups.append({
+        matchups_3p.append({
+            "key": ",".join(strategies),
+            "names": ", ".join(strategies),
+            "results": sorted(matchup_pnl.items(), key=lambda x: x[1], reverse=True),
+        })
+
+    matchups_1v1 = []
+    for strategies in evaluator.two_tuple_of_strategies:
+        matchup_pnl = evaluator.get_matchup_pnl(strategies)
+        matchups_1v1.append({
             "key": ",".join(strategies),
             "names": ", ".join(strategies),
             "results": sorted(matchup_pnl.items(), key=lambda x: x[1], reverse=True),
@@ -113,7 +122,8 @@ def results():
 
     return render_template("results.html",
         global_results=sorted_results if sorted_results else None,
-        matchups=matchups,
+        matchups_3p=matchups_3p,
+        matchups_1v1=matchups_1v1,
         **common_context(),
     )
 
@@ -155,13 +165,19 @@ def get_state(strategy_id):
 
 @app.route("/interesting")
 def interesting_games():
-    matchups = []
+    matchups_3p = []
     for strategies in evaluator.three_tuple_of_strategies:
-        matchups.append({
+        matchups_3p.append({
             "key": ",".join(strategies),
             "names": ", ".join(strategies),
         })
-    return render_template("interesting.html", matchups=matchups, **common_context())
+    matchups_1v1 = []
+    for strategies in evaluator.two_tuple_of_strategies:
+        matchups_1v1.append({
+            "key": ",".join(strategies),
+            "names": ", ".join(strategies),
+        })
+    return render_template("interesting.html", matchups_3p=matchups_3p, matchups_1v1=matchups_1v1, **common_context())
 
 @app.route("/interesting/<comma_separated_strategies>")
 def interesting_game_detail(comma_separated_strategies: str):

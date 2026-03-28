@@ -118,7 +118,7 @@ class ThreePlayerEvaluator:
             "is_running": self.is_running,
             "num_evaluations": self.num_evaluations,
             "num_strategies": len(self.strategies),
-            "num_matchups": len(self.three_tuple_of_strategies),
+            "num_matchups": len(self.three_tuple_of_strategies) + len(self.two_tuple_of_strategies),
         }
 
     def get_global_pnl(self) -> dict[str, float]:

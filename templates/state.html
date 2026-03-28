@@ -2,8 +2,12 @@
 {% block title %}State - {{ strategy_id }}{% endblock %}
 {% block content %}
 <h1>Strategy State: {{ strategy_id }}</h1>
-<div class="card" style="padding: 1em; font-family: monospace; white-space: pre-wrap; word-break: break-word;">
-    {{ state | safe }}
+<div class="card" style="padding: 1em; font-family: monospace; word-break: break-word;">
+    <div style="white-space: pre-wrap;">{{ state | safe }}</div>
 </div>
+<style>
+    .card table { white-space: normal; }
+    .card table td { min-width: 18px; }
+</style>
 <p><a href="/strategies">&larr; Back to strategies</a></p>
 {% endblock %}

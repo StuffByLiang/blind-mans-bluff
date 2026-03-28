@@ -1,9 +1,14 @@
 import logging
+import io
 from pathlib import Path
-from flask import Flask, request, send_from_directory, render_template, redirect, url_for, jsonify
+from flask import Flask, request, send_from_directory, render_template, redirect, url_for, jsonify, Response
 from evaluator import ThreePlayerEvaluator
 import os
 import random
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 app = Flask(__name__)
 
@@ -329,6 +334,65 @@ def api_interesting_all(comma_separated_strategies: str):
                 "pot": round_state.pot,
             })
     return jsonify({"matchup": list(sorted_three_tuple), "total_rounds": len(rounds_list), "rounds": rounds_list})
+
+@app.route("/api/heatmap/<strategy_id>")
+def api_heatmap(strategy_id):
+    """Generate a 52x52 heatmap PNG of card matchup PnL."""
+    strategy = evaluator.strategies.get(strategy_id)
+    if strategy is None:
+        return jsonify({"error": f"Strategy {strategy_id} not found"}), 404
+    if strategy.state_password is not None:
+        pw = request.args.get("password", "")
+        if pw != strategy.state_password:
+            return jsonify({"error": "Password required"}), 403
+
+    opp = request.args.get("opp", "")
+    pos = int(request.args.get("pos", 0))
+    pos_label = "we pay ante" if pos == 1 else "they pay ante"
+
+    if not hasattr(strategy, 'card_matchup_pnl'):
+        return jsonify({"error": "No card matchup data"}), 404
+
+    # Build 52x52 matrix
+    grid = np.full((52, 52), np.nan)
+    counts = np.zeros((52, 52), dtype=int)
+    for (oid, mc, oc, p), (total, count) in strategy.card_matchup_pnl.items():
+        if oid == opp and p == pos and count > 0:
+            grid[mc][oc] = total / count
+            counts[mc][oc] = count
+
+    fig, ax = plt.subplots(figsize=(14, 12))
+    # Mask NaN cells
+    masked = np.ma.masked_invalid(grid)
+    vmax = min(np.nanmax(np.abs(grid[~np.isnan(grid)])), 8) if not np.all(np.isnan(grid)) else 5
+    im = ax.imshow(masked, cmap='RdYlGn', vmin=-vmax, vmax=vmax, aspect='equal', interpolation='nearest')
+
+    # Rank labels on every 4th card
+    rank_labels = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
+    tick_pos = [i * 4 + 1.5 for i in range(13)]
+    ax.set_xticks(tick_pos)
+    ax.set_xticklabels(rank_labels, fontsize=9)
+    ax.set_yticks(tick_pos)
+    ax.set_yticklabels(rank_labels, fontsize=9)
+
+    # Grid lines between ranks
+    for i in range(1, 13):
+        ax.axhline(i * 4 - 0.5, color='gray', linewidth=0.5, alpha=0.5)
+        ax.axvline(i * 4 - 0.5, color='gray', linewidth=0.5, alpha=0.5)
+
+    ax.set_xlabel(f"Opponent card ({opp})", fontsize=12)
+    ax.set_ylabel("Our card (ChirpyClaude)", fontsize=12)
+    ax.set_title(f"PnL per round vs {opp} ({pos_label})\nGreen=profit, Red=loss", fontsize=13)
+
+    plt.colorbar(im, ax=ax, label='Avg PnL per round', shrink=0.8)
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=100)
+    plt.close(fig)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype='image/png')
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)

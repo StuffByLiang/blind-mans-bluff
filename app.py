@@ -248,10 +248,17 @@ def api_upload():
 @app.route("/api/results")
 def api_results():
     global_pnl = evaluator.get_global_pnl()
+    # Include per-matchup results (both 3-player and 1v1)
+    matchups = {}
+    all_tuples = set(evaluator.pnl_for_three_tuple.keys())
+    for strat_tuple in all_tuples:
+        key = ",".join(strat_tuple)
+        matchups[key] = evaluator.get_matchup_pnl(strat_tuple)
     return jsonify({
         "global_pnl": global_pnl,
         "rounds": dict(evaluator.number_of_rounds_for_strategy),
         "num_evaluations": evaluator.num_evaluations,
+        "matchups": matchups,
     })
 
 @app.route("/api/interesting/<comma_separated_strategies>")

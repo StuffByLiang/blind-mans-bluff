@@ -15,7 +15,7 @@ import itertools
 
 RESULTS_DIR = Path('results')
 
-ThreeTupleOfStrategies = tuple[str, str, str]
+StrategyTuple = tuple[str, ...]
 
 class ThreePlayerEvaluator:
     def __init__(self, logger = logging.getLogger(__name__)):
@@ -26,7 +26,8 @@ class ThreePlayerEvaluator:
         self.strategy_files: dict[str, str] = {}  # player_id -> filename
         self.load_errors: list[str] = []  # errors from last load
 
-        self.three_tuple_of_strategies: set[ThreeTupleOfStrategies] = set()
+        self.three_tuple_of_strategies: set[StrategyTuple] = set()
+        self.two_tuple_of_strategies: set[StrategyTuple] = set()
 
         # used for running
         self.request_stop = False
@@ -73,6 +74,8 @@ class ThreePlayerEvaluator:
 
         for strategies in itertools.combinations(self.strategies, 3):
             self.three_tuple_of_strategies.add(tuple(sorted(strategies)))
+        for strategies in itertools.combinations(self.strategies, 2):
+            self.two_tuple_of_strategies.add(tuple(sorted(strategies)))
 
         self.reset()
 
@@ -151,9 +154,30 @@ class ThreePlayerEvaluator:
 
         try:
           while True:
-            if len(self.strategies) < 3:
+            if len(self.strategies) < 2:
                 return
-            for strategies in itertools.combinations(self.strategies, 3):
+            # 3-player matchups
+            if len(self.strategies) >= 3:
+                for strategies in itertools.combinations(self.strategies, 3):
+                    if self.request_stop:
+                        return
+                    game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
+
+                    sorted_strategy_tuple = tuple(sorted(strategies))
+                    self.last_game[sorted_strategy_tuple] = game
+
+                    for strategy in strategies:
+                        num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
+                        pnl = (game.stack_sizes[strategy] - starting_stack)
+
+                        self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
+                        self.pnl_for_strategy[strategy] += pnl
+
+                        self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
+                        self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl
+
+            # 1v1 matchups
+            for strategies in itertools.combinations(self.strategies, 2):
                 if self.request_stop:
                     return
                 game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
@@ -164,9 +188,6 @@ class ThreePlayerEvaluator:
                 for strategy in strategies:
                     num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
                     pnl = (game.stack_sizes[strategy] - starting_stack)
-
-                    self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
-                    self.pnl_for_strategy[strategy] += pnl
 
                     self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
                     self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl

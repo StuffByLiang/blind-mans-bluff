@@ -14,28 +14,9 @@ import itertools
 
 RESULTS_DIR = Path('results')
 
-class ThreePlayerEvaluator:
-    def load_strategies(self):
-        """
-        Load all strategies from the strategies folder
-        """
-        pass
-
-    def restart(self):
-        """
-        restarts the evaluator, blocks until the evaluator has stopped
-        """
-        pass
-
-    def start_evaluating_strategies(self):
-        """
-        Evaluate the strategies against each other. 
-        """
-        pass
-
 ThreeTupleOfStrategies = tuple[str, str, str]
 
-class ThreePlayerEvaluator(ThreePlayerEvaluator):
+class ThreePlayerEvaluator:
     def __init__(self, logger = logging.getLogger(__name__)):
         self.logger = logger
 

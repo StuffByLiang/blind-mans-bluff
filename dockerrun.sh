@@ -1,4 +1,4 @@
-# SUDO=sudo # comment out if dont want sudo
+SUDO=sudo # comment out if dont want sudo
 PORT=42069 STRATEGIES_DIR=~/strategies1 && $SUDO docker compose run -d \
     -v $STRATEGIES_DIR:/app/strategies \
     -p $PORT:$PORT \

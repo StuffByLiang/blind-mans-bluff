@@ -80,12 +80,10 @@ class _HiddenCardPlayerInfoProxy:
         return self._source.keys()
 
     def values(self):
-        for pid in self._source:
-            yield self[pid]
+        return [self[pid] for pid in self._source]
 
     def items(self):
-        for pid in self._source:
-            yield pid, self[pid]
+        return [(pid, self[pid]) for pid in self._source]
 
     def __repr__(self):
         return repr(dict(self.items()))
@@ -194,6 +192,7 @@ class RoundState:
         new_state.current_bet_total = self.current_bet_total
         new_state.last_raise_delta = self.last_raise_delta
         new_state.betting_history = tuple(self.betting_history)
+        new_state._money_put_in_by_player = dict(self._money_put_in_by_player)
         new_state.player_information = MappingProxyType(new_player_info)
         new_state._frozen = True
         return new_state
@@ -631,9 +630,11 @@ class IndianPokerGame:
                     self.non_busted_player_id_order.remove(pid)
                     self.turn_busted[pid] = len(self.historical_stack_sizes)
 
-            # Call reveal_round for each strategy
+            # Call reveal_round for each strategy that participated in this round
             frozen_state = round_state.to_frozen()
             for strategy in self.strategies.values():
+                if strategy.player_id not in round_state.player_information:
+                    continue
                 try:
                     strategy.reveal_round(frozen_state)
                 except Exception as e:

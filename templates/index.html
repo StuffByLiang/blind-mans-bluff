@@ -7,6 +7,9 @@
 <div class="card">
     <h3>Quick Stats</h3>
     <p><strong>{{ strategies|length }}</strong> strategies loaded | <strong>{{ num_matchups }}</strong> matchups</p>
+    <form method="post" action="/reset" style="margin-top:0.5rem; display:inline;">
+        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Reset all results and restart evaluator?')">Reset Results</button>
+    </form>
 </div>
 
 {% if global_results %}

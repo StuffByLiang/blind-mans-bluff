@@ -89,6 +89,11 @@ def delete_strategy(strategy_id):
         return redirect(url_for("strategies_page", message=error, message_type="error"))
     return redirect(url_for("strategies_page", message=f"Deleted {strategy_id}", message_type="success"))
 
+@app.route("/reset", methods=["POST"])
+def reset():
+    evaluator.restart()
+    return redirect(url_for("index"))
+
 @app.route("/results")
 def results():
     global_pnl = evaluator.get_global_pnl()

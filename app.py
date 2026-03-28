@@ -353,19 +353,37 @@ def api_heatmap(strategy_id):
     if not hasattr(strategy, 'card_matchup_pnl'):
         return jsonify({"error": "No card matchup data"}), 404
 
+    # Close any leaked matplotlib state
+    plt.close('all')
+
     # Build 52x52 matrix
     grid = np.full((52, 52), np.nan)
-    counts = np.zeros((52, 52), dtype=int)
+    n_filled = 0
     for (oid, mc, oc, p), (total, count) in strategy.card_matchup_pnl.items():
         if oid == opp and p == pos and count > 0:
             grid[mc][oc] = total / count
-            counts[mc][oc] = count
+            n_filled += 1
 
-    fig, ax = plt.subplots(figsize=(14, 12))
-    # Mask NaN cells
-    masked = np.ma.masked_invalid(grid)
-    vmax = min(np.nanmax(np.abs(grid[~np.isnan(grid)])), 8) if not np.all(np.isnan(grid)) else 5
-    im = ax.imshow(masked, cmap='RdYlGn', vmin=-vmax, vmax=vmax, aspect='equal', interpolation='nearest')
+    fig = plt.figure(figsize=(14, 12))
+    ax = fig.add_subplot(111)
+
+    if n_filled == 0:
+        ax.text(0.5, 0.5, 'No data yet', transform=ax.transAxes, ha='center', va='center', fontsize=20)
+    else:
+        # Fill NaN with 0 for display, use gray for missing
+        display_grid = np.where(np.isnan(grid), 0, grid)
+        mask = np.isnan(grid)
+        vmax = min(float(np.nanmax(np.abs(grid[~np.isnan(grid)]))), 8)
+        vmax = max(vmax, 1)
+
+        im = ax.imshow(display_grid, cmap='RdYlGn', vmin=-vmax, vmax=vmax,
+                        aspect='equal', interpolation='nearest', origin='upper')
+        # Gray out cells with no data
+        overlay = np.zeros((*grid.shape, 4))
+        overlay[mask] = [0.2, 0.2, 0.2, 1.0]  # dark gray for missing
+        ax.imshow(overlay, aspect='equal', interpolation='nearest', origin='upper')
+
+        fig.colorbar(im, ax=ax, label='Avg PnL per round', shrink=0.8)
 
     # Rank labels on every 4th card
     rank_labels = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
@@ -377,18 +395,16 @@ def api_heatmap(strategy_id):
 
     # Grid lines between ranks
     for i in range(1, 13):
-        ax.axhline(i * 4 - 0.5, color='gray', linewidth=0.5, alpha=0.5)
-        ax.axvline(i * 4 - 0.5, color='gray', linewidth=0.5, alpha=0.5)
+        ax.axhline(i * 4 - 0.5, color='white', linewidth=0.5, alpha=0.7)
+        ax.axvline(i * 4 - 0.5, color='white', linewidth=0.5, alpha=0.7)
 
     ax.set_xlabel(f"Opponent card ({opp})", fontsize=12)
-    ax.set_ylabel("Our card (ChirpyClaude)", fontsize=12)
-    ax.set_title(f"PnL per round vs {opp} ({pos_label})\nGreen=profit, Red=loss", fontsize=13)
+    ax.set_ylabel(f"Our card ({strategy_id})", fontsize=12)
+    ax.set_title(f"PnL per round vs {opp} ({pos_label}) — {n_filled} cells filled\nGreen=profit, Red=loss, Gray=no data", fontsize=13)
 
-    plt.colorbar(im, ax=ax, label='Avg PnL per round', shrink=0.8)
-    plt.tight_layout()
-
+    fig.tight_layout()
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=100)
+    fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
     plt.close(fig)
     buf.seek(0)
     return Response(buf.getvalue(), mimetype='image/png')

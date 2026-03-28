@@ -1,8 +1,7 @@
 import logging
 from pathlib import Path
-from flask import Flask, request, send_from_directory
+from flask import Flask, request, send_from_directory, render_template, redirect, url_for
 from evaluator import ThreePlayerEvaluator
-from threading import Thread
 import os
 import random
 
@@ -37,108 +36,147 @@ evaluator = ThreePlayerEvaluator(logger)
 evaluator.load_strategies()
 evaluator.start_evaluating_strategies()
 
+APP_TITLE = os.getenv("APP_TITLE") or "Indian Poker"
+APP_DESCRIPTION = os.getenv("APP_DESCRIPTION") or "Made with love by Liang, Jeffrey, Matt"
+
 ########## Helpers ##########
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def common_context():
+    return {
+        "app_title": APP_TITLE,
+        "app_description": APP_DESCRIPTION,
+        "evaluator_status": evaluator.get_status(),
+    }
+
 ########## Routes ##########
 
 @app.route("/")
-def hello_world():
-    strategies = evaluator.strategies
-    return f"""
-    <h1>Indian Poker Strategy Evaluator - {os.getenv("APP_TITLE") or ":D"}</h1>
-    <p>{os.getenv("APP_DESCRIPTION") or "Made with love by Liang, Jeffrey, Matt"}</p>
-    <p>Upload your strategies to see how they perform against each other</p>
-    <a href="/results">View Global Results</a> <br />
-    <a href="/exampleinterestinggame">View Example Interesting Games</a> <br />
-    <a href="/upload">Upload New Strategy</a> <br />
-    Current strategies: {list(strategies.keys())}
-    """
+def index():
+    global_pnl = evaluator.get_global_pnl()
+    sorted_pnl = sorted(global_pnl.items(), key=lambda x: x[1], reverse=True)
+    return render_template("index.html",
+        strategies=evaluator.strategies,
+        num_matchups=len(evaluator.three_tuple_of_strategies),
+        global_results=sorted_pnl if sorted_pnl else None,
+        **common_context(),
+    )
+
+@app.route("/strategies")
+def strategies_page():
+    message = request.args.get("message", "")
+    message_type = request.args.get("message_type", "")
+    global_pnl = evaluator.get_global_pnl()
+    strat_info = {}
+    for sid in evaluator.strategies:
+        strat_info[sid] = {
+            "file": evaluator.strategy_files.get(sid, "?"),
+            "pnl": global_pnl.get(sid),
+        }
+    return render_template("strategies.html",
+        strategies=strat_info,
+        message=message,
+        message_type=message_type,
+        **common_context(),
+    )
+
+@app.route("/strategies/<strategy_id>/delete", methods=["POST"])
+def delete_strategy(strategy_id):
+    error = evaluator.delete_strategy(strategy_id)
+    if error:
+        return redirect(url_for("strategies_page", message=error, message_type="error"))
+    return redirect(url_for("strategies_page", message=f"Deleted {strategy_id}", message_type="success"))
 
 @app.route("/results")
 def results():
-    try:
-        with open('results/results.txt', 'r') as f:
-            # read the last 3 lines
-            lines = f.readlines()[-3:]
+    global_pnl = evaluator.get_global_pnl()
+    sorted_results = sorted(
+        [(name, pnl, evaluator.number_of_rounds_for_strategy.get(name, 0)) for name, pnl in global_pnl.items()],
+        key=lambda x: x[1], reverse=True
+    )
 
-            results = "<h1>Results</h1>"
-            for line in lines:
-                results += f"<p>{line}</p>"
-            
-            for strategies in evaluator.three_tuple_of_strategies:
-                results += f'<a href="/results/{",".join(strategies)}">Results for {", ".join(strategies)}</a><br />'
-                
-            return results
-    except FileNotFoundError:
-        return "No results yet"
+    matchups = []
+    for strategies in evaluator.three_tuple_of_strategies:
+        matchup_pnl = evaluator.get_matchup_pnl(strategies)
+        matchups.append({
+            "key": ",".join(strategies),
+            "names": ", ".join(strategies),
+            "results": sorted(matchup_pnl.items(), key=lambda x: x[1], reverse=True),
+        })
+
+    return render_template("results.html",
+        global_results=sorted_results if sorted_results else None,
+        matchups=matchups,
+        **common_context(),
+    )
 
 @app.route("/results/<comma_separated_strategies>")
-def results_per_comma_separated_strategy(comma_separated_strategies: str):
+def results_detail(comma_separated_strategies: str):
     sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
-    folder_name = ",".join(sorted_three_tuple)
-    folder_path = Path(f"results/{folder_name}")
-    # now get all pngs in results folder and display them
-    images = ""
-    try:
-        with open(folder_path / 'results.txt', 'r') as f:
-            # read the last 3 lines
-            lines = f.readlines()[-3:]
+    key = ",".join(sorted_three_tuple)
+    folder_path = Path(f"results/{key}")
 
-            results = f"<h1>Results for {sorted_three_tuple}</h1>"
-            for line in lines:
-                results += f"<p>{line}</p>"
+    matchup_pnl = evaluator.get_matchup_pnl(sorted_three_tuple)
+    sorted_results = sorted(
+        [(name, pnl, evaluator.number_of_rounds_for_three_tuple[sorted_three_tuple].get(name, 0))
+         for name, pnl in matchup_pnl.items()],
+        key=lambda x: x[1], reverse=True
+    )
 
-            for file in folder_path.glob('*.png'):
-                images += f'<img src="/resultspublic/{comma_separated_strategies}/{file.name}" alt="{file.name}" width="500">'
-            
-            results += images
-            return results
-    except FileNotFoundError:
-        return f"No results yet for {sorted_three_tuple}"
+    images = []
+    if folder_path.exists():
+        images = sorted([f.name for f in folder_path.glob('*.png')])
 
-@app.route("/getstate/<strategy>")
-def get_state(strategy):
-    strategy = evaluator.strategies.get(strategy)
+    return render_template("results_detail.html",
+        names=", ".join(sorted_three_tuple),
+        key=key,
+        results=sorted_results,
+        images=images,
+        **common_context(),
+    )
+
+@app.route("/getstate/<strategy_id>")
+def get_state(strategy_id):
+    strategy = evaluator.strategies.get(strategy_id)
     if strategy is None:
-        return "Strategy not found"
-    return strategy.print_state()
+        return render_template("state.html", strategy_id=strategy_id, state="Strategy not found", **common_context())
+    return render_template("state.html", strategy_id=strategy_id, state=strategy.print_state(), **common_context())
 
-@app.route("/exampleinterestinggame")
-def example_interesting_game():
-    results = "<h1>Find Example Interesting Games</h1>"
+@app.route("/interesting")
+def interesting_games():
+    matchups = []
     for strategies in evaluator.three_tuple_of_strategies:
-        results += f'<a href="/exampleinterestinggame/{",".join(strategies)}">Example Interesting Game for {", ".join(strategies)}</a><br />'
+        matchups.append({
+            "key": ",".join(strategies),
+            "names": ", ".join(strategies),
+        })
+    return render_template("interesting.html", matchups=matchups, **common_context())
 
-    return results
-    
-    
-@app.route("/exampleinterestinggame/<comma_separated_strategies>")
-def example_interesting_game_for_strategies(comma_separated_strategies: str):
+@app.route("/interesting/<comma_separated_strategies>")
+def interesting_game_detail(comma_separated_strategies: str):
     sorted_three_tuple = tuple(sorted(comma_separated_strategies.split(',')))
 
+    rounds_list = []
     if sorted_three_tuple in evaluator.last_game:
-        interesting_round_logs: list[tuple[int, str]] = [] # [(round_num, log)]
+        interesting_round_logs = []
         for round_num, round_history in enumerate(evaluator.last_game[sorted_three_tuple].round_history):
-            round, log = round_history 
-            if not all(action.action_type == "check" for action in round.betting_history):
+            round_state, log = round_history
+            if not all(action.action_type == "check" for action in round_state.betting_history):
                 interesting_round_logs.append((round_num, log))
-            
-        if len(interesting_round_logs) == 0:
-            return "No interesting rounds found"
-        # now sample 10 random interesting_round logs but make sure to keep them in order
-        sample_size = 10
-        random.shuffle(interesting_round_logs)
-        interesting_round_logs = sorted(interesting_round_logs[:sample_size], key=lambda x: x[0])
-        html = ""
-        for round_num, logs in interesting_round_logs:
-            html += f"<b>Round {round_num}</b><p style='white-space: pre-wrap'>{logs}</p>"
-        return html
-    else:
-        return "No results found"
-    
+
+        if interesting_round_logs:
+            sample_size = 10
+            random.shuffle(interesting_round_logs)
+            rounds_list = sorted(interesting_round_logs[:sample_size], key=lambda x: x[0])
+
+    return render_template("interesting_detail.html",
+        names=", ".join(sorted_three_tuple),
+        rounds=rounds_list,
+        **common_context(),
+    )
+
 # add results as a public folder
 @app.route('/resultspublic/<path:path>')
 def send_results(path):
@@ -146,35 +184,28 @@ def send_results(path):
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():
-    error_msg = ""
+    message = ""
+    message_type = ""
     if request.method == 'POST':
-        # Check if the post request has the file part
         if 'file' not in request.files:
-            error_msg = 'No file part'
-        
-        file = request.files['file']
-        
-        # If user does not select file, browser also
-        # submits an empty part without filename
-        if file.filename == '':
-            error_msg = 'No selected file'
-        
-        if file and allowed_file(file.filename):
-            filename = file.filename
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            evaluator.restart()
-            error_msg = 'File successfully uploaded'
-    
-    return f'''
-    <!doctype html>
-    <title>Upload File</title>
-    <p style="color:red">{error_msg}</p>
-    <h1>Upload new File</h1>
-    <form method="post" enctype="multipart/form-data" action="/upload">
-      <input type="file" name="file">
-      <input type="submit" value="Upload">
-    </form>
-    '''
+            message, message_type = 'No file part', 'error'
+        else:
+            file = request.files['file']
+            if file.filename == '':
+                message, message_type = 'No selected file', 'error'
+            elif not allowed_file(file.filename):
+                message, message_type = 'Only .py files are allowed', 'error'
+            else:
+                filename = file.filename
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                evaluator.restart()
+                if evaluator.load_errors:
+                    message = 'File uploaded but errors occurred: ' + '; '.join(evaluator.load_errors)
+                    message_type = 'error'
+                else:
+                    message, message_type = 'Strategy uploaded successfully', 'success'
+
+    return render_template("upload.html", message=message, message_type=message_type, **common_context())
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}State - {{ strategy_id }}{% endblock %}
+{% block content %}
+<h1>Strategy State: {{ strategy_id }}</h1>
+<div class="card">
+    <pre>{{ state }}</pre>
+</div>
+<p><a href="/strategies">&larr; Back to strategies</a></p>
+{% endblock %}

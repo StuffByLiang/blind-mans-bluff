@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Results - {{ names }}{% endblock %}
+{% block content %}
+<h1>Results: {{ names }}</h1>
+
+{% if results %}
+<div class="card">
+    <table>
+        <tr><th>Strategy</th><th>PnL / 1000 rounds</th><th>Total Rounds</th></tr>
+        {% for name, pnl, rounds in results %}
+        <tr>
+            <td>{{ name }}</td>
+            <td class="{{ 'pnl-positive' if pnl > 0 else ('pnl-negative' if pnl < 0 else 'pnl-zero') }}">
+                {{ "%.1f"|format(pnl) }}
+            </td>
+            <td class="meta">{{ rounds }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{% if images %}
+<h2>Stack Charts</h2>
+{% for img in images %}
+<div class="card">
+    <img src="/resultspublic/{{ key }}/{{ img }}" alt="{{ img }}">
+</div>
+{% endfor %}
+{% else %}
+<div class="alert alert-info">No charts available yet.</div>
+{% endif %}
+
+<p><a href="/results">&larr; Back to all results</a></p>
+{% endblock %}

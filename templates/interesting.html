@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Interesting Games{% endblock %}
+{% block content %}
+<h1>Interesting Games</h1>
+<p style="margin-bottom:1rem; color:#666;">Rounds where players did more than just check.</p>
+
+{% if matchups %}
+{% for matchup in matchups %}
+<div class="card">
+    <a href="/interesting/{{ matchup.key }}">{{ matchup.names }}</a>
+</div>
+{% endfor %}
+{% else %}
+<div class="alert alert-info">No matchups available yet.</div>
+{% endif %}
+{% endblock %}

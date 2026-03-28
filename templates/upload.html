@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Upload Strategy{% endblock %}
+{% block content %}
+<h1>Upload Strategy</h1>
+
+{% if message %}
+<div class="alert {{ 'alert-success' if message_type == 'success' else 'alert-error' }}">{{ message }}</div>
+{% endif %}
+
+<div class="card">
+    <form method="post" enctype="multipart/form-data" action="/upload">
+        <p style="margin-bottom:0.75rem;">
+            <input type="file" name="file" accept=".py">
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </p>
+    </form>
+    <p class="meta" style="margin-top:0.5rem;">
+        File must be a .py file that exports <code>strategy = YourStrategyClass</code> (the class, not an instance).
+        The class must subclass <code>Strategy</code> with a unique <code>player_id</code> and implement <code>make_decision()</code>.
+    </p>
+</div>
+{% endblock %}

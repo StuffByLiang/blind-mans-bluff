@@ -5,6 +5,7 @@ from indianpoker import RoundState, Strategy, IndianPokerGame, simulate_game
 from importlib import reload
 from pathlib import Path
 import os
+import json
 import logging
 import datetime
 import matplotlib.pyplot as plt
@@ -22,12 +23,16 @@ class ThreePlayerEvaluator:
 
         self.strategy_classes: dict[str, Strategy] = {}
         self.strategies: dict[str, Strategy] = {}
-        
+        self.strategy_files: dict[str, str] = {}  # player_id -> filename
+        self.load_errors: list[str] = []  # errors from last load
+
         self.three_tuple_of_strategies: set[ThreeTupleOfStrategies] = set()
 
         # used for running
         self.request_stop = False
         self.main_thread = None
+        self.num_evaluations = 0
+        self.is_running = False
 
     def reset(self):
         # used for global score
@@ -42,16 +47,25 @@ class ThreePlayerEvaluator:
 
     def load_strategies(self):
         self.strategies = {}
+        self.strategy_files = {}
+        self.load_errors = []
         for file in os.listdir('strategies'):
             if file.endswith('.py') and file != 'indianpoker.py':
                 try:
                     strategy_module = __import__(f'strategies.{file[:-3]}', fromlist=[''])
                     reload(strategy_module)
                     strategy_class: Strategy = getattr(strategy_module, "strategy")
+                    if not hasattr(strategy_class, 'player_id') or not strategy_class.player_id:
+                        raise ValueError(f"Strategy in {file} has no player_id")
+                    if not hasattr(strategy_class, 'make_decision'):
+                        raise ValueError(f"Strategy in {file} has no make_decision method")
                     self.strategy_classes[strategy_class.player_id] = strategy_class
                     self.strategies[strategy_class.player_id] = strategy_class()
+                    self.strategy_files[strategy_class.player_id] = file
                     self.logger.info(f"Loaded strategy {strategy_class.player_id} from file {file})")
                 except Exception as e:
+                    error_msg = f"Error loading {file}: {e}"
+                    self.load_errors.append(error_msg)
                     self.logger.exception(f"Error loading strategy from file {file}")
 
         # pitch the strategies against each other
@@ -85,17 +99,58 @@ class ThreePlayerEvaluator:
         self.main_thread = threading.Thread(target=self.run)
         self.main_thread.start()
 
+    def delete_strategy(self, player_id: str) -> str:
+        """Delete a strategy by player_id. Returns error message or empty string on success."""
+        if player_id not in self.strategy_files:
+            return f"Strategy '{player_id}' not found"
+        filename = self.strategy_files[player_id]
+        filepath = Path('strategies') / filename
+        if filepath.exists():
+            filepath.unlink()
+        self.restart()
+        return ""
+
+    def get_status(self) -> dict:
+        return {
+            "is_running": self.is_running,
+            "num_evaluations": self.num_evaluations,
+            "num_strategies": len(self.strategies),
+            "num_matchups": len(self.three_tuple_of_strategies),
+        }
+
+    def get_global_pnl(self) -> dict[str, float]:
+        """Returns {player_id: avg_pnl_per_1000_rounds}."""
+        result = {}
+        for strategy in self.strategies:
+            rounds = self.number_of_rounds_for_strategy.get(strategy, 0)
+            if rounds > 0:
+                result[strategy] = self.pnl_for_strategy[strategy] * 1000 / rounds
+            else:
+                result[strategy] = 0.0
+        return result
+
+    def get_matchup_pnl(self, sorted_three_tuple) -> dict[str, float]:
+        """Returns {player_id: avg_pnl_per_1000_rounds} for a specific matchup."""
+        result = {}
+        for strategy in sorted_three_tuple:
+            rounds = self.number_of_rounds_for_three_tuple[sorted_three_tuple].get(strategy, 0)
+            if rounds > 0:
+                result[strategy] = self.pnl_for_three_tuple[sorted_three_tuple][strategy] * 1000 / rounds
+            else:
+                result[strategy] = 0.0
+        return result
+
     def run(self):
         ante=5
         starting_stack=200
         rounds=1000
 
         last_write_time = datetime.datetime.now()
-        num_evaluations = 0
+        self.num_evaluations = 0
+        self.is_running = True
 
-        self.stopped = True
-
-        while True:
+        try:
+          while True:
             if len(self.strategies) < 3:
                 return
             for strategies in itertools.combinations(self.strategies, 3):
@@ -124,11 +179,11 @@ class ThreePlayerEvaluator:
                     self.logger.info(f"Average pnl per 1000 games: {avg_pnl_per_1000_rounds}")
                     with open('results/results.txt', 'a') as f:
                         results_json = {
-                            "num_evaluations": num_evaluations,
+                            "num_evaluations": self.num_evaluations,
                             "strategy_win_rate": avg_pnl_per_1000_rounds,
                             "timestamp": datetime.datetime.now().isoformat()
                         }
-                        f.write(str(results_json)+"\n")
+                        f.write(json.dumps(results_json)+"\n")
                 write_global_results()
 
                 def write_results_for_game(output_dir: Path, game: IndianPokerGame):
@@ -139,12 +194,12 @@ class ThreePlayerEvaluator:
                     self.logger.info(f"Average pnl per 1000 games for {sorted_three_tuple}: {avg_pnl_per_1000_rounds}")
                     with open(f'{output_dir}/results.txt', 'a') as f:
                         results_json = {
-                            "num_evaluations": num_evaluations,
+                            "num_evaluations": self.num_evaluations,
                             "strategy_win_rate": avg_pnl_per_1000_rounds,
                             "timestamp": datetime.datetime.now().isoformat()
                         }
-                        f.write(str(results_json)+"\n")
-                
+                        f.write(json.dumps(results_json)+"\n")
+
                 def generate_picture_for_game(output_dir: Path, game: IndianPokerGame):
                     num_rounds_used = len( game.historical_stack_sizes )
                     size_by_player = {}
@@ -156,7 +211,7 @@ class ThreePlayerEvaluator:
                     for k,v in size_by_player.items():
                         plt.plot( list(range(num_rounds_used)), v, label=k )
                     plt.legend()
-                    plt.savefig(f'{output_dir}/results{num_evaluations % 10}.png')
+                    plt.savefig(f'{output_dir}/results{self.num_evaluations % 10}.png')
                     plt.clf()
                 
                 for strategies, game in self.last_game.items():
@@ -168,8 +223,10 @@ class ThreePlayerEvaluator:
                     generate_picture_for_game(output_dir, game)
                     write_results_for_game(output_dir, game)
 
-                num_evaluations += 1
+                self.num_evaluations += 1
                 last_write_time = datetime.datetime.now()
+        finally:
+            self.is_running = False
 
 if __name__ == "__main__":
     evaluator = ThreePlayerEvaluator()

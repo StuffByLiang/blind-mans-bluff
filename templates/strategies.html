@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Strategies{% endblock %}
+{% block content %}
+<h1>Strategies</h1>
+
+{% if message %}
+<div class="alert {{ 'alert-success' if message_type == 'success' else 'alert-error' }}">{{ message }}</div>
+{% endif %}
+
+<div class="card">
+    <table>
+        <tr><th>Player ID</th><th>File</th><th>PnL / 1000 rounds</th><th>Actions</th></tr>
+        {% for sid, info in strategies.items() %}
+        <tr>
+            <td>{{ sid }}</td>
+            <td class="meta">{{ info.file or '?' }}</td>
+            <td class="{{ 'pnl-positive' if info.pnl > 0 else ('pnl-negative' if info.pnl < 0 else 'pnl-zero') }}">
+                {{ "%.1f"|format(info.pnl) if info.pnl is not none else '-' }}
+            </td>
+            <td>
+                <form method="post" action="/strategies/{{ sid }}/delete" style="display:inline"
+                      onsubmit="return confirm('Delete {{ sid }}? This will restart the evaluator.')">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+                <a href="/getstate/{{ sid }}" class="btn btn-primary btn-sm">State</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+<a href="/upload" class="btn btn-primary">Upload New Strategy</a>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Interesting Game - {{ names }}{% endblock %}
+{% block content %}
+<h1>Interesting Rounds: {{ names }}</h1>
+
+{% if rounds %}
+{% for round_num, log in rounds %}
+<div class="card">
+    <h3>Round {{ round_num }}</h3>
+    <pre>{{ log }}</pre>
+</div>
+{% endfor %}
+{% else %}
+<div class="alert alert-info">No interesting rounds found (all checks).</div>
+{% endif %}
+
+<p><a href="/interesting">&larr; Back to all matchups</a></p>
+{% endblock %}

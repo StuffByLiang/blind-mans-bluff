@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Indian Poker - Home{% endblock %}
+{% block content %}
+<h1>Indian Poker Strategy Evaluator</h1>
+<p style="margin-bottom:1rem; color:#666;">{{ app_description }}</p>
+
+<div class="card">
+    <h3>Quick Stats</h3>
+    <p><strong>{{ strategies|length }}</strong> strategies loaded | <strong>{{ num_matchups }}</strong> matchups</p>
+</div>
+
+{% if global_results %}
+<div class="card">
+    <h3>Leaderboard (Avg PnL per 1000 rounds)</h3>
+    <table>
+        <tr><th>Strategy</th><th>PnL / 1000 rounds</th></tr>
+        {% for name, pnl in global_results %}
+        <tr>
+            <td>{{ name }}</td>
+            <td class="{{ 'pnl-positive' if pnl > 0 else ('pnl-negative' if pnl < 0 else 'pnl-zero') }}">
+                {{ "%.1f"|format(pnl) }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}

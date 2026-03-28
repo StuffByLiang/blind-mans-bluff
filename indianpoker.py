@@ -53,6 +53,102 @@ class PlayerInformation:
     def __repr__(self):
         return f"PlayerInformation(player_id={self.player_id}, order={self.order}, card={self.card}, remaining_stack_size={self.remaining_stack_size}, has_folded={self.has_folded})"
 
+class _HiddenCardPlayerInfoProxy:
+    """Dict-like proxy that hides one player's card."""
+    __slots__ = ('_source', '_hidden_pid')
+
+    def __init__(self, source, hidden_pid):
+        self._source = source
+        self._hidden_pid = hidden_pid
+
+    def __getitem__(self, key):
+        info = self._source[key]
+        if key == self._hidden_pid:
+            return replace(info, card=-1)
+        return info
+
+    def __contains__(self, key):
+        return key in self._source
+
+    def __len__(self):
+        return len(self._source)
+
+    def __iter__(self):
+        return iter(self._source)
+
+    def keys(self):
+        return self._source.keys()
+
+    def values(self):
+        for pid in self._source:
+            yield self[pid]
+
+    def items(self):
+        for pid in self._source:
+            yield pid, self[pid]
+
+    def __repr__(self):
+        return repr(dict(self.items()))
+
+
+class _FrozenStateView:
+    """Lightweight frozen view of a RoundState with one player's card hidden."""
+    __slots__ = ('pot', 'current_bet_total', 'last_raise_delta', 'betting_history',
+                 'player_information', '_money_put_in_by_player', '_initialized')
+
+    def __init__(self, source_state, hidden_pid, betting_tuple):
+        object.__setattr__(self, '_initialized', False)
+        self.pot = source_state.pot
+        self.current_bet_total = source_state.current_bet_total
+        self.last_raise_delta = source_state.last_raise_delta
+        self.betting_history = betting_tuple
+        self.player_information = _HiddenCardPlayerInfoProxy(source_state.player_information, hidden_pid)
+        self._money_put_in_by_player = source_state._money_put_in_by_player
+        object.__setattr__(self, '_initialized', True)
+
+    def __setattr__(self, key, value):
+        if getattr(self, '_initialized', False):
+            raise AttributeError("Cannot modify frozen state view")
+        object.__setattr__(self, key, value)
+
+    def get_money_put_in_by_player(self, player_id: str) -> int:
+        return self._money_put_in_by_player.get(player_id, 0)
+
+    def is_player_all_in(self, player_id: str) -> bool:
+        return self.player_information[player_id].remaining_stack_size == 0
+
+    def can_check_currently(self, player_id) -> bool:
+        return self.get_money_put_in_by_player(player_id) == self.current_bet_total
+
+    def get_delta_to_call_for_player(self, player_id: str) -> int:
+        return min(self.player_information[player_id].remaining_stack_size, self.current_bet_total - self.get_money_put_in_by_player(player_id))
+
+    def get_all_in_action_for_player_id(self, player_id: str) -> Action:
+        if self.player_information[player_id].remaining_stack_size > self.current_bet_total:
+            return Action('raise', player_id=player_id, delta=self.player_information[player_id].remaining_stack_size)
+        else:
+            return Action('call', player_id=player_id, delta=self.player_information[player_id].remaining_stack_size)
+
+    def get_minimum_raise_delta_for_player(self, player_id: str) -> int:
+        call_delta = self.get_delta_to_call_for_player(player_id)
+        return max(self.last_raise_delta + call_delta, 1)
+
+    def get_winning_player_id(self) -> str:
+        return max([p.player_id for p in self.player_information.values() if not p.has_folded], key=lambda pid: self.player_information[pid].card)
+
+    def check_fold(self, player_id):
+        return Action("check") if self.can_check_currently(player_id) else Action("fold")
+
+    def check_call(self, player_id):
+        if self.can_check_currently(player_id):
+            return Action("check")
+        else:
+            return Action("call", delta=self.get_delta_to_call_for_player(player_id))
+
+    def __repr__(self):
+        return f"_FrozenStateView(pot={self.pot}, current_bet_total={self.current_bet_total})"
+
+
 class RoundState:
     """
     RoundState class to store the state of the round.
@@ -71,6 +167,10 @@ class RoundState:
         self.last_raise_delta = 0
         self.betting_history = []
         self.player_information = player_information
+        self._money_put_in_by_player = {pid: 0 for pid in player_information}
+        self._num_folded = 0
+        self._num_all_in = 0
+        self._betting_tuple_cache = None
 
     def __setattr__(self, key, value):
         if key != '_frozen' and getattr(self, '_frozen', False):
@@ -79,18 +179,11 @@ class RoundState:
 
     def get_state_hiding_card_for_player_id(self, player_id: str):
         """
-        Returns a frozen RoundState with the player_id's card hidden from their PlayerInformation.
+        Returns a frozen view with the player_id's card hidden from their PlayerInformation.
         """
-        new_player_info = OrderedDict()
-        for pid, info in self.player_information.items():
-            new_player_info[pid] = replace(info, card=-1) if pid == player_id else info
-        new_state = RoundState(pot=self.pot, player_information=new_player_info)
-        new_state.current_bet_total = self.current_bet_total
-        new_state.last_raise_delta = self.last_raise_delta
-        new_state.betting_history = tuple(self.betting_history)
-        new_state.player_information = MappingProxyType(new_player_info)
-        new_state._frozen = True
-        return new_state
+        if self._betting_tuple_cache is None:
+            self._betting_tuple_cache = tuple(self.betting_history)
+        return _FrozenStateView(self, player_id, self._betting_tuple_cache)
 
     def to_frozen(self):
         """
@@ -109,7 +202,7 @@ class RoundState:
         """
         Returns the total amount of money put in by the player in the current round.
         """
-        return sum(action.delta for action in self.betting_history if action.player_id == player_id)
+        return self._money_put_in_by_player.get(player_id, 0)
 
     def is_player_all_in(self, player_id: str) -> bool:
         """
@@ -230,6 +323,7 @@ class IndianPokerGame:
         self.strategies = strategies
         self.ante = ante
         self.logger = logger
+        self._log_enabled = logger.isEnabledFor(logging.INFO)
 
         self.stack_sizes = {strategy.player_id: starting_stack for strategy in strategies.values()}
         self.historical_stack_sizes = [ dict( self.stack_sizes ) ]
@@ -318,27 +412,29 @@ class IndianPokerGame:
         - all players have called the current raiser
         - all players have checked
         """
-        log_stream, stream_handler = self.setup_round_logger()
+        if self._log_enabled:
+            log_stream, stream_handler = self.setup_round_logger()
+        else:
+            log_stream, stream_handler = None, None
         try:
             # Initial round setup
             round_state = self.get_initial_round_state()
             player_id_cycle = cycle(round_state.player_information.keys())
             num_players = len( round_state.player_information )
             # debug log each player's card
-            for player_info in round_state.player_information.values():
-                self.logger.info(f"{player_info.player_id} received card: {player_info.card}")
+            if self._log_enabled:
+                for player_info in round_state.player_information.values():
+                    self.logger.info(f"{player_info.player_id} received card: {player_info.card}")
 
             # Perform betting rounds
             last_bet = False
             player_id = next(player_id_cycle)
             while True:
-                num_folds = sum( 1 for p in round_state.player_information.values() if p.has_folded )
-                num_all_in = sum( 1 for p in round_state.player_information.values() if not p.has_folded and p.remaining_stack_size == 0 )
-                need_action = num_players - num_folds - num_all_in - (1 if last_bet else 0)
+                need_action = num_players - round_state._num_folded - round_state._num_all_in - (1 if last_bet else 0)
                 made_move = 0
                 for rep in range( need_action ):
                     # HACK: if everyone folds, you win
-                    if sum( 1 for p in round_state.player_information.values() if p.has_folded ) == num_players - 1:
+                    if round_state._num_folded == num_players - 1:
                         made_move = need_action
                         invalid_action = False
                         break
@@ -346,54 +442,69 @@ class IndianPokerGame:
                     while True:
                         player_info = round_state.player_information[player_id]
                         if player_info.has_folded:
-                            self.logger.info(f"skipping {player_id} because they have folded")
+                            if self._log_enabled:
+                                self.logger.info(f"skipping {player_id} because they have folded")
                             player_id = next( player_id_cycle )
                         elif player_info.remaining_stack_size == 0:
-                            self.logger.info(f"skipping {player_id} because they are all-in")
+                            if self._log_enabled:
+                                self.logger.info(f"skipping {player_id} because they are all-in")
                             player_id = next( player_id_cycle )
                         else:
                             break
 
-                    self.logger.info(f"--- Action on {player_id} ---")
+                    if self._log_enabled:
+                        self.logger.info(f"--- Action on {player_id} ---")
                     action = None
                     try:
                         strategy = self.strategies[player_id]
                         action = strategy.make_decision(round_state.get_state_hiding_card_for_player_id(player_id))
                         action = Action(action.action_type, player_id=player_id, delta=action.delta)
                     except Exception as e:
-                        self.logger.exception(f"Error getting decision for {player_id}, folding.")
+                        if self._log_enabled:
+                            self.logger.exception(f"Error getting decision for {player_id}, folding.")
                         action = Action('fold', player_id=player_id)
 
                     # Process action
                     invalid_action = False
                     if action.action_type == 'fold':
-                        self.logger.info(f"{player_id} folds.")
+                        if self._log_enabled:
+                            self.logger.info(f"{player_id} folds.")
                         round_state.player_information[player_id] = replace(player_info, has_folded=True)
+                        round_state._num_folded += 1
 
                     elif action.action_type == 'call':
                         call_delta = action.delta
                         if call_delta == 0:
-                            self.logger.info(f"{player_id} folds due to a call amount of 0")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} folds due to a call amount of 0")
                             invalid_action = True
                         elif call_delta != round_state.get_delta_to_call_for_player(player_id):
-                            self.logger.info(f"{player_id} folds due to invalid call amount.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} folds due to invalid call amount.")
                             invalid_action = True
                         elif call_delta > round_state.player_information[player_id].remaining_stack_size:
-                            self.logger.info(f"{player_id} folds due to stack size too small.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} folds due to stack size too small.")
                             invalid_action = True
                         else:
                             info = round_state.player_information[player_id]
                             round_state.player_information[player_id] = replace(info, remaining_stack_size=info.remaining_stack_size - call_delta)
                             round_state.pot += call_delta
-                            self.logger.info(f"{player_id} calls {call_delta}.")
+                            round_state._money_put_in_by_player[player_id] += call_delta
+                            if info.remaining_stack_size - call_delta == 0:
+                                round_state._num_all_in += 1
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} calls {call_delta}.")
 
                     elif action.action_type == 'raise':
                         call_and_raise_delta = action.delta # this includes the amount needed to call as well
                         if call_and_raise_delta < round_state.get_minimum_raise_delta_for_player(player_id):
-                            self.logger.info(f"{player_id} folds due to invalid raise amount.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} folds due to invalid raise amount.")
                             invalid_action = True
                         elif call_and_raise_delta > round_state.player_information[player_id].remaining_stack_size:
-                            self.logger.info(f"{player_id} folds due to stack size too small.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} folds due to stack size too small.")
                             invalid_action = True
                         else:
                             player_current_bet = round_state.get_money_put_in_by_player(player_id)
@@ -405,18 +516,25 @@ class IndianPokerGame:
                             round_state.current_bet_total = player_current_bet + call_delta + raise_delta
                             info = round_state.player_information[player_id]
                             round_state.player_information[player_id] = replace(info, remaining_stack_size=info.remaining_stack_size - call_and_raise_delta)
+                            round_state._money_put_in_by_player[player_id] += call_and_raise_delta
+                            if info.remaining_stack_size - call_and_raise_delta == 0:
+                                round_state._num_all_in += 1
 
-                            self.logger.info(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} raises {raise_delta} (call {call_delta}) to the pot for a total bet of {round_state.current_bet_total}.")
 
                     elif action.action_type == 'check':
                         if not round_state.can_check_currently(player_id):
-                            self.logger.info(f"{player_id} folds due to invalid check.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} folds due to invalid check.")
                             invalid_action = True
                         else:
-                            self.logger.info(f"{player_id} checks.")
+                            if self._log_enabled:
+                                self.logger.info(f"{player_id} checks.")
 
                     else:
-                        self.logger.info(f"{player_id} folds due to invalid action type.")
+                        if self._log_enabled:
+                            self.logger.info(f"{player_id} folds due to invalid action type.")
                         invalid_action = True
 
                     acting_player_id = player_id
@@ -424,6 +542,7 @@ class IndianPokerGame:
                     # Record the action
                     if not invalid_action:
                         round_state.betting_history.append(action)
+                        round_state._betting_tuple_cache = None
                         if action.action_type != 'raise':
                             made_move += 1
                         else:
@@ -433,7 +552,9 @@ class IndianPokerGame:
                         round_state.player_information[acting_player_id] = replace(
                             round_state.player_information[acting_player_id], has_folded=True
                         )
+                        round_state._num_folded += 1
                         round_state.betting_history.append(Action('fold', player_id=acting_player_id))
+                        round_state._betting_tuple_cache = None
                         made_move += 1
 
                 if made_move == need_action:
@@ -444,7 +565,8 @@ class IndianPokerGame:
 
             if len(remaining_players) == 1:
                 winner = remaining_players[0]
-                self.logger.info(f"{winner} wins the pot of {round_state.pot} by default.")
+                if self._log_enabled:
+                    self.logger.info(f"{winner} wins the pot of {round_state.pot} by default.")
                 for pid in round_state.player_information:
                     if pid == winner:
                         self.stack_sizes[pid] = round_state.player_information[pid].remaining_stack_size + round_state.pot
@@ -453,9 +575,7 @@ class IndianPokerGame:
             else:
                 # Side pot distribution: each player can only win from each opponent
                 # up to the amount they themselves put in
-                contributions = {}
-                for pid in round_state.player_information:
-                    contributions[pid] = round_state.get_money_put_in_by_player(pid)
+                contributions = round_state._money_put_in_by_player
 
                 # Start each player with their remaining stack
                 for pid in round_state.player_information:
@@ -482,7 +602,8 @@ class IndianPokerGame:
                     eligible_winners = sorted_remaining[i:]
                     side_pot_winner = max(eligible_winners, key=lambda pid: round_state.player_information[pid].card)
                     self.stack_sizes[side_pot_winner] += side_pot
-                    self.logger.info(f"{side_pot_winner} wins side pot of {side_pot}.")
+                    if self._log_enabled:
+                        self.logger.info(f"{side_pot_winner} wins side pot of {side_pot}.")
 
                     already_claimed = claimant_contrib
 
@@ -492,9 +613,11 @@ class IndianPokerGame:
                 if remainder > 0:
                     top_player = max(remaining_players, key=lambda pid: round_state.player_information[pid].card)
                     self.stack_sizes[top_player] += remainder
-                    self.logger.info(f"{top_player} wins remainder of {remainder}.")
+                    if self._log_enabled:
+                        self.logger.info(f"{top_player} wins remainder of {remainder}.")
 
-            self.logger.info(f"Stack Sizes: {self.stack_sizes}")
+            if self._log_enabled:
+                self.logger.info(f"Stack Sizes: {self.stack_sizes}")
             self.historical_stack_sizes.append( dict( self.stack_sizes ) )
 
             # update busted players
@@ -514,12 +637,14 @@ class IndianPokerGame:
                 try:
                     strategy.reveal_round(frozen_state)
                 except Exception as e:
-                    self.logger.exception(f"Error calling reveal_round for {strategy.player_id}")
+                    if self._log_enabled:
+                        self.logger.exception(f"Error calling reveal_round for {strategy.player_id}")
 
-            self.round_history.append( (round_state, log_stream.getvalue()) )
+            self.round_history.append( (round_state, log_stream.getvalue() if log_stream else "") )
             return round_state
         finally:
-            self.cleanup_round_logger(stream_handler)
+            if stream_handler is not None:
+                self.cleanup_round_logger(stream_handler)
 
     def has_at_least_2_players_left(self):
         return len(self.stack_sizes) - len(self.busted_players) >= 2

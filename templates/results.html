@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Results{% endblock %}
+{% block content %}
+<h1>Global Results</h1>
+
+{% if global_results %}
+<div class="card">
+    <h3>Leaderboard (Avg PnL per 1000 rounds)</h3>
+    <table>
+        <tr><th>Strategy</th><th>PnL / 1000 rounds</th><th>Total Rounds</th></tr>
+        {% for name, pnl, rounds in global_results %}
+        <tr>
+            <td>{{ name }}</td>
+            <td class="{{ 'pnl-positive' if pnl > 0 else ('pnl-negative' if pnl < 0 else 'pnl-zero') }}">
+                {{ "%.1f"|format(pnl) }}
+            </td>
+            <td class="meta">{{ rounds }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info">No results yet. The evaluator needs at least 3 strategies to run.</div>
+{% endif %}
+
+{% if matchups %}
+<h2>Matchup Results</h2>
+{% for matchup in matchups %}
+<div class="card">
+    <h3><a href="/results/{{ matchup.key }}">{{ matchup.names }}</a></h3>
+    <table>
+        <tr>
+            {% for name, pnl in matchup.results %}
+            <td>{{ name }}: <span class="{{ 'pnl-positive' if pnl > 0 else ('pnl-negative' if pnl < 0 else 'pnl-zero') }}">{{ "%.1f"|format(pnl) }}</span></td>
+            {% endfor %}
+        </tr>
+    </table>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

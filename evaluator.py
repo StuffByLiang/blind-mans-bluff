@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('agg')
 import itertools
+import time
 
 RESULTS_DIR = Path('results')
 
@@ -72,10 +73,10 @@ class ThreePlayerEvaluator:
         # pitch the strategies against each other
         self.logger.info(f"Reloaded Strategies: strategies playing: {self.strategies}")
 
-        for strategies in itertools.combinations(self.strategies, 3):
-            self.three_tuple_of_strategies.add(tuple(sorted(strategies)))
-        for strategies in itertools.combinations(self.strategies, 2):
-            self.two_tuple_of_strategies.add(tuple(sorted(strategies)))
+        # Preserve existing matchups (only remove ones with deleted strategies)
+        valid_ids = set(self.strategies.keys())
+        self.three_tuple_of_strategies = {t for t in self.three_tuple_of_strategies if all(s in valid_ids for s in t)}
+        self.two_tuple_of_strategies = {t for t in self.two_tuple_of_strategies if all(s in valid_ids for s in t)}
 
         self.reset()
 
@@ -101,6 +102,39 @@ class ThreePlayerEvaluator:
     def start_evaluating_strategies(self):
         self.main_thread = threading.Thread(target=self.run)
         self.main_thread.start()
+
+    def add_matchup(self, player_ids: list[str]) -> str:
+        """Add a matchup. Returns error message or empty string on success."""
+        for pid in player_ids:
+            if pid not in self.strategies:
+                return f"Strategy '{pid}' not found"
+        t = tuple(sorted(player_ids))
+        if len(t) == 2:
+            if t in self.two_tuple_of_strategies:
+                return "Matchup already exists"
+            self.two_tuple_of_strategies.add(t)
+        elif len(t) == 3:
+            if t in self.three_tuple_of_strategies:
+                return "Matchup already exists"
+            self.three_tuple_of_strategies.add(t)
+        else:
+            return "Matchup must have 2 or 3 players"
+        return ""
+
+    def remove_matchup(self, player_ids: list[str]) -> str:
+        """Remove a matchup. Returns error message or empty string on success."""
+        t = tuple(sorted(player_ids))
+        if len(t) == 2:
+            if t not in self.two_tuple_of_strategies:
+                return "Matchup not found"
+            self.two_tuple_of_strategies.discard(t)
+        elif len(t) == 3:
+            if t not in self.three_tuple_of_strategies:
+                return "Matchup not found"
+            self.three_tuple_of_strategies.discard(t)
+        else:
+            return "Matchup must have 2 or 3 players"
+        return ""
 
     def delete_strategy(self, player_id: str) -> str:
         """Delete a strategy by player_id. Returns error message or empty string on success."""
@@ -154,40 +188,25 @@ class ThreePlayerEvaluator:
 
         try:
           while True:
-            if len(self.strategies) < 2:
-                return
-            # 3-player matchups
-            if len(self.strategies) >= 3:
-                for strategies in itertools.combinations(self.strategies, 3):
-                    if self.request_stop:
-                        return
-                    game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
-
-                    sorted_strategy_tuple = tuple(sorted(strategies))
-                    self.last_game[sorted_strategy_tuple] = game
-
-                    for strategy in strategies:
-                        num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
-                        pnl = (game.stack_sizes[strategy] - starting_stack)
-
-                        self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
-                        self.pnl_for_strategy[strategy] += pnl
-
-                        self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
-                        self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl
-
-            # 1v1 matchups
-            for strategies in itertools.combinations(self.strategies, 2):
+            all_matchups = list(self.three_tuple_of_strategies) + list(self.two_tuple_of_strategies)
+            if not all_matchups:
+                time.sleep(1)
                 if self.request_stop:
                     return
-                game = simulate_game({k: v for k, v in self.strategies.items() if k in strategies}, ante, starting_stack, rounds)
-
-                sorted_strategy_tuple = tuple(sorted(strategies))
+                continue
+            for sorted_strategy_tuple in all_matchups:
+                if self.request_stop:
+                    return
+                game = simulate_game({k: v for k, v in self.strategies.items() if k in sorted_strategy_tuple}, ante, starting_stack, rounds)
                 self.last_game[sorted_strategy_tuple] = game
 
-                for strategy in strategies:
+                for strategy in sorted_strategy_tuple:
                     num_rounds_for_strategy = game.turn_busted[strategy] if strategy in game.turn_busted else len( game.round_history )
                     pnl = (game.stack_sizes[strategy] - starting_stack)
+
+                    if len(sorted_strategy_tuple) == 3:
+                        self.number_of_rounds_for_strategy[strategy] += num_rounds_for_strategy
+                        self.pnl_for_strategy[strategy] += pnl
 
                     self.number_of_rounds_for_three_tuple[sorted_strategy_tuple][strategy] += num_rounds_for_strategy
                     self.pnl_for_three_tuple[sorted_strategy_tuple][strategy] += pnl
@@ -232,6 +251,7 @@ class ThreePlayerEvaluator:
                     for k,v in size_by_player.items():
                         plt.plot( list(range(num_rounds_used)), v, label=k )
                     plt.legend()
+                    plt.title(f'Evaluation #{self.num_evaluations}')
                     plt.savefig(f'{output_dir}/results{self.num_evaluations % 10}.png')
                     plt.clf()
                 

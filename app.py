@@ -148,7 +148,7 @@ def results_detail(comma_separated_strategies: str):
 
     images = []
     if folder_path.exists():
-        images = sorted([f.name for f in folder_path.glob('*.png')])
+        images = sorted([f.name for f in folder_path.glob('*.png')], key=lambda name: (folder_path / name).stat().st_mtime, reverse=True)
 
     return render_template("results_detail.html",
         names=", ".join(sorted_three_tuple),
@@ -168,6 +168,41 @@ def get_state(strategy_id):
         if pw != strategy.state_password:
             return render_template("state.html", strategy_id=strategy_id, state="Password required. Add ?password=... to URL", **common_context())
     return render_template("state.html", strategy_id=strategy_id, state=strategy.print_state(), **common_context())
+
+@app.route("/matchups")
+def matchups_page():
+    message = request.args.get("message", "")
+    message_type = request.args.get("message_type", "")
+    strategy_ids = sorted(evaluator.strategies.keys())
+    matchups_3p = [{"key": ",".join(t), "names": ", ".join(t)} for t in sorted(evaluator.three_tuple_of_strategies)]
+    matchups_1v1 = [{"key": ",".join(t), "names": ", ".join(t)} for t in sorted(evaluator.two_tuple_of_strategies)]
+    return render_template("matchups.html",
+        strategy_ids=strategy_ids,
+        matchups_3p=matchups_3p,
+        matchups_1v1=matchups_1v1,
+        message=message,
+        message_type=message_type,
+        **common_context(),
+    )
+
+@app.route("/matchups/add", methods=["POST"])
+def add_matchup():
+    players = request.form.getlist("players")
+    if not players:
+        return redirect(url_for("matchups_page", message="No players selected", message_type="error"))
+    error = evaluator.add_matchup(players)
+    if error:
+        return redirect(url_for("matchups_page", message=error, message_type="error"))
+    return redirect(url_for("matchups_page", message=f"Added matchup: {', '.join(sorted(players))}", message_type="success"))
+
+@app.route("/matchups/remove", methods=["POST"])
+def remove_matchup():
+    key = request.form.get("key", "")
+    players = key.split(",")
+    error = evaluator.remove_matchup(players)
+    if error:
+        return redirect(url_for("matchups_page", message=error, message_type="error"))
+    return redirect(url_for("matchups_page", message=f"Removed matchup: {', '.join(players)}", message_type="success"))
 
 @app.route("/interesting")
 def interesting_games():
@@ -211,7 +246,9 @@ def interesting_game_detail(comma_separated_strategies: str):
 # add results as a public folder
 @app.route('/resultspublic/<path:path>')
 def send_results(path):
-    return send_from_directory('results', path)
+    response = send_from_directory('results', path)
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():

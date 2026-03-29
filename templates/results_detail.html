@@ -21,10 +21,10 @@
 {% endif %}
 
 {% if images %}
-<h2>Stack Charts</h2>
+<h2>Stack Charts (latest first)</h2>
 {% for img in images %}
 <div class="card">
-    <img src="/resultspublic/{{ key }}/{{ img }}" alt="{{ img }}">
+    <img src="/resultspublic/{{ key }}/{{ img }}?t={{ range(1000000) | random }}" alt="{{ img }}">
 </div>
 {% endfor %}
 {% else %}

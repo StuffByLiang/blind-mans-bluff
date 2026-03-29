@@ -15,6 +15,7 @@ import itertools
 import time
 
 RESULTS_DIR = Path('results')
+MATCHUPS_FILE = Path('strategies/matchups.json')
 
 StrategyTuple = tuple[str, ...]
 
@@ -29,12 +30,36 @@ class ThreePlayerEvaluator:
 
         self.three_tuple_of_strategies: set[StrategyTuple] = set()
         self.two_tuple_of_strategies: set[StrategyTuple] = set()
+        self._load_matchups()
 
         # used for running
         self.request_stop = False
         self.main_thread = None
         self.num_evaluations = 0
         self.is_running = False
+
+    def _load_matchups(self):
+        """Load matchups from disk."""
+        if MATCHUPS_FILE.exists():
+            try:
+                with open(MATCHUPS_FILE) as f:
+                    data = json.load(f)
+                self.three_tuple_of_strategies = {tuple(t) for t in data.get("3p", [])}
+                self.two_tuple_of_strategies = {tuple(t) for t in data.get("1v1", [])}
+            except Exception:
+                self.logger.exception("Error loading matchups file")
+
+    def _save_matchups(self):
+        """Save matchups to disk."""
+        data = {
+            "3p": [list(t) for t in sorted(self.three_tuple_of_strategies)],
+            "1v1": [list(t) for t in sorted(self.two_tuple_of_strategies)],
+        }
+        try:
+            with open(MATCHUPS_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            self.logger.exception("Error saving matchups file")
 
     def reset(self):
         # used for global score
@@ -75,8 +100,12 @@ class ThreePlayerEvaluator:
 
         # Preserve existing matchups (only remove ones with deleted strategies)
         valid_ids = set(self.strategies.keys())
+        old_3p = self.three_tuple_of_strategies
+        old_1v1 = self.two_tuple_of_strategies
         self.three_tuple_of_strategies = {t for t in self.three_tuple_of_strategies if all(s in valid_ids for s in t)}
         self.two_tuple_of_strategies = {t for t in self.two_tuple_of_strategies if all(s in valid_ids for s in t)}
+        if self.three_tuple_of_strategies != old_3p or self.two_tuple_of_strategies != old_1v1:
+            self._save_matchups()
 
         self.reset()
 
@@ -119,6 +148,7 @@ class ThreePlayerEvaluator:
             self.three_tuple_of_strategies.add(t)
         else:
             return "Matchup must have 2 or 3 players"
+        self._save_matchups()
         return ""
 
     def remove_matchup(self, player_ids: list[str]) -> str:
@@ -134,6 +164,7 @@ class ThreePlayerEvaluator:
             self.three_tuple_of_strategies.discard(t)
         else:
             return "Matchup must have 2 or 3 players"
+        self._save_matchups()
         return ""
 
     def delete_strategy(self, player_id: str) -> str:

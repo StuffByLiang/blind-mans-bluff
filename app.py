@@ -420,5 +420,79 @@ def api_heatmap(strategy_id):
     return Response(buf.getvalue(), mimetype='image/png')
 
 
+@app.route("/api/heatmap_combined/<strategy_id>")
+def api_heatmap_combined(strategy_id):
+    """Generate a combined 52x52 heatmap PNG averaging both positions."""
+    strategy = evaluator.strategies.get(strategy_id)
+    if strategy is None:
+        return jsonify({"error": f"Strategy {strategy_id} not found"}), 404
+    if strategy.state_password is not None:
+        pw = request.args.get("password", "")
+        if pw != strategy.state_password:
+            return jsonify({"error": "Password required"}), 403
+
+    opp = request.args.get("opp", "")
+
+    if not hasattr(strategy, 'card_matchup_pnl'):
+        return jsonify({"error": "No card matchup data"}), 404
+
+    # Build 52x52 matrix combining both positions
+    totals = np.zeros((52, 52))
+    counts = np.zeros((52, 52))
+    for (oid, mc, oc, p), (total, count) in strategy.card_matchup_pnl.items():
+        if oid == opp and count > 0:
+            totals[mc][oc] += total
+            counts[mc][oc] += count
+
+    grid = np.full((52, 52), np.nan)
+    n_filled = 0
+    for i in range(52):
+        for j in range(52):
+            if counts[i][j] > 0:
+                grid[i][j] = totals[i][j] / counts[i][j]
+                n_filled += 1
+
+    fig = Figure(figsize=(14, 12))
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.add_subplot(111)
+
+    if n_filled == 0:
+        ax.text(0.5, 0.5, 'No data yet', transform=ax.transAxes, ha='center', va='center', fontsize=20)
+    else:
+        display_grid = np.where(np.isnan(grid), 0, grid)
+        mask = np.isnan(grid)
+        vmax = min(float(np.nanmax(np.abs(grid[~np.isnan(grid)]))), 8)
+        vmax = max(vmax, 1)
+
+        im = ax.imshow(display_grid, cmap='RdYlGn', vmin=-vmax, vmax=vmax,
+                        aspect='equal', interpolation='nearest', origin='upper')
+        overlay = np.zeros((*grid.shape, 4))
+        overlay[mask] = [0.2, 0.2, 0.2, 1.0]
+        ax.imshow(overlay, aspect='equal', interpolation='nearest', origin='upper')
+
+        fig.colorbar(im, ax=ax, label='Avg PnL per round', shrink=0.8)
+
+    rank_labels = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
+    tick_pos = [i * 4 + 1.5 for i in range(13)]
+    ax.set_xticks(tick_pos)
+    ax.set_xticklabels(rank_labels, fontsize=9)
+    ax.set_yticks(tick_pos)
+    ax.set_yticklabels(rank_labels, fontsize=9)
+
+    for i in range(1, 13):
+        ax.axhline(i * 4 - 0.5, color='white', linewidth=0.5, alpha=0.7)
+        ax.axvline(i * 4 - 0.5, color='white', linewidth=0.5, alpha=0.7)
+
+    ax.set_xlabel(f"Opponent card ({opp})", fontsize=12)
+    ax.set_ylabel(f"Our card ({strategy_id})", fontsize=12)
+    ax.set_title(f"PnL per round vs {opp} (combined positions) — {n_filled} cells filled\nGreen=profit, Red=loss, Gray=no data", fontsize=13)
+
+    fig.tight_layout()
+    buf = io.BytesIO()
+    canvas.print_png(buf)
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype='image/png')
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)

@@ -427,10 +427,10 @@ class IndianPokerGame:
                     self.logger.info(f"{player_info.player_id} received card: {player_info.card}")
 
             # Perform betting rounds
-            last_bet = False
+            last_raiser_can_act = False
             player_id = next(player_id_cycle)
             while True:
-                need_action = num_players - round_state._num_folded - round_state._num_all_in - (1 if last_bet else 0)
+                need_action = num_players - round_state._num_folded - round_state._num_all_in - (1 if last_raiser_can_act else 0)
                 made_move = 0
                 for rep in range( need_action ):
                     # HACK: if everyone folds, you win
@@ -546,7 +546,8 @@ class IndianPokerGame:
                         if action.action_type != 'raise':
                             made_move += 1
                         else:
-                            last_bet = True
+                            # All-in raisers are already excluded by _num_all_in.
+                            last_raiser_can_act = not round_state.is_player_all_in(acting_player_id)
                             break
                     else:
                         round_state.player_information[acting_player_id] = replace(
